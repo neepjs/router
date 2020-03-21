@@ -1,5 +1,6 @@
 {
   "name": "@neep/router",
+  "version": "0.1.0-alpha.0",
   "main": "dist/neep.router.common.js",
   "module": "dist/neep.router.esm.js",
   "unpkg": "dist/neep.router.js",
@@ -19,18 +20,19 @@
     "dist"
   ],
   "keywords": [
-    "neep"
+    "neep",
+    "router"
   ],
   "author": "Fierflame",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/neepjs/neep.git"
+    "url": "git+https://github.com/neepjs/router.git"
   },
   "bugs": {
-    "url": "https://github.com/neepjs/neep/issues"
+    "url": "https://github.com/neepjs/router/issues"
   },
-  "homepage": "https://github.com/neepjs/neep#readme",
+  "homepage": "https://github.com/neepjs/router#readme",
   "devDependencies": {
     "@babel/cli": "^7.5.5",
     "@babel/core": "^7.5.5",
@@ -51,12 +53,15 @@
     "@babel/plugin-transform-modules-commonjs": "^7.5.0",
     "@babel/plugin-transform-react-jsx": "^7.3.0",
     "@babel/plugin-transform-typescript": "^7.5.5",
+    "@neep/devtools": "0.1.0-alpha.1",
+    "@neep/web": "0.1.0-alpha.1",
     "@rollup/plugin-alias": "^3.0.1",
     "@types/node": "^12.7.2",
     "@typescript-eslint/eslint-plugin": "^1.13.0",
     "babel-eslint": "^11.0.0-beta.0",
     "eslint": "^6.2.1",
     "eslint-plugin-babel": "^5.3.0",
+    "monitorable": "0.1.0-alpha.3",
     "rollup": "^1.20.1",
     "rollup-plugin-babel": "^4.3.3",
     "rollup-plugin-dts": "^1.2.1",
@@ -66,11 +71,10 @@
     "rollup-plugin-typescript-paths": "^1.2.2",
     "typescript": "^3.5.3"
   },
+  "peerDependencies": {
+    "@neep/core": "0.1.0-alpha.1"
+  },
   "dependencies": {
-    "@neep/core": "0.1.0-alpha.1",
-    "@neep/devtools": "0.1.0-alpha.1",
-    "@neep/web": "0.1.0-alpha.1",
-    "monitorable": "0.1.0-alpha.3",
     "path-to-regexp": "^6.1.0"
   }
 }
