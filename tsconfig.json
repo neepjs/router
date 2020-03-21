@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "jsxFactory": "createElement",
+    "outDir": "./types/",
+    "module": "commonjs",
+    "target": "esnext",
+    "baseUrl": "./",
+    "paths": {
+      "@neep/router": ["src"]
+    },
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": true
+  }
+}
