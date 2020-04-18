@@ -7,7 +7,7 @@ import { cleanPath } from './util';
 import { addRoute, matchRoutes } from './route';
 import { stringify, parse } from './query';
 import * as history from './history';
-import { Component, mSimple, mName } from '@neep/core';
+import { Component } from '@neep/core';
 
 function get(
 	location: Location | string,
@@ -135,9 +135,13 @@ class Router {
 				}
 				const {redirect, append} = last.route;
 				try {
-					this.replace(
-						`${path}${append ? '/' : '/../'}${redirect}`,
-						state);
+					if (append) {
+						this.replace(`${path}/${redirect}`, state);
+					} else if (redirect && redirect[0] === '/') {
+						this.replace(redirect, state);
+					} else {
+						this.replace(`${path}/../${redirect}`, state);
+					}
 					return ;
 				} finally {
 					redirects.pop();
