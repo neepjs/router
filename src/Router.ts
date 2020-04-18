@@ -131,7 +131,7 @@ class Router {
 							redirects.join('\n')
 						}`,
 						'router',
-					)
+					);
 				}
 				const {redirect, append} = last.route;
 				try {
@@ -179,7 +179,7 @@ class Router {
 			this._namedRoutes,
 			this._path(),
 			this.stringify,
-		)
+		);
 		this.history?.push(path, search, hash, state);
 		this._update(path, search, hash, state);
 	}
@@ -189,7 +189,7 @@ class Router {
 			this._namedRoutes,
 			this._path(),
 			this.stringify,
-		)
+		);
 		this.history?.replace(path, search, hash, state);
 		this._update(path, search, hash, state);
 	}
@@ -199,8 +199,8 @@ class Router {
 			this._namedRoutes,
 			this._path(),
 			this.stringify,
-		)
-		return `${path}${search}${hash}`
+		);
+		return `${path}${search}${hash}`;
 
 	}
 	go(index: number) {
@@ -226,7 +226,7 @@ class Router {
 			value: view,
 			enumerable: true,
 			configurable: true,
-		})
+		});
 		return view;
 	}
 }

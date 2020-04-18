@@ -10,7 +10,7 @@ export default class WebPathHistory implements IHistory {
 		base?: string;
 	}) {
 		this.router = router;
-		let base = cleanPath(opt?.base || '')
+		let base = cleanPath(opt?.base || '');
 		this.base = base === '/' ? '' : base;
 		const f = () => {
 			this.router._update(
@@ -19,12 +19,12 @@ export default class WebPathHistory implements IHistory {
 				location.hash,
 				history.state,
 			);
-		}
+		};
 		window.addEventListener('popstate', f);
 		this.destroy = () => {
 			this.destroy = () => {};
 			window.removeEventListener('popstate', f);
-		}
+		};
 	}
 	start() {
 		this.router._update(
@@ -64,7 +64,7 @@ export default class WebPathHistory implements IHistory {
 			search: location.search,
 			hash: location.hash,
 			state: history.state,
-		}
+		};
 		history.go(index);
 		const path = this.getPath();
 		const search = location.search;
@@ -95,7 +95,7 @@ export default class WebPathHistory implements IHistory {
 			href: `${this.base}${this.router.getUrl(to)}`,
 			onClick: (e: MouseEvent) => {
 				e.preventDefault(); onClick();
-			}
+			},
 		}, ...childNodes);
 	}
 }

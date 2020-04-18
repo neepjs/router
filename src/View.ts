@@ -28,5 +28,5 @@ export default function RouterView(
 		__NeepRouter__: router,
 	}, createElement(component, props));
 }
-mSimple(RouterView)
+mSimple(RouterView);
 mName('RouterView', RouterView);

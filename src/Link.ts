@@ -31,5 +31,5 @@ export default function RouterLink(
 		|| createElement('span', {onclick}, ...childNodes);
 
 }
-mSimple(RouterLink)
+mSimple(RouterLink);
 mName('RouterView', RouterLink);

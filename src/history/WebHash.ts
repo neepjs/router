@@ -15,12 +15,12 @@ export default class WebPathHistory implements IHistory {
 		const f = () => {
 			const [path, search, hash] = parse(location.hash.substr(1));
 			this.router._update(path, search, hash);
-		}
+		};
 		window.addEventListener('hashchange', f);
 		this.destroy = () => {
 			this.destroy = () => {};
 			window.removeEventListener('hashchange', f);
-		}
+		};
 	}
 	start() {
 		const [path, search, hash] = parse(location.hash.substr(1));
@@ -56,7 +56,7 @@ export default class WebPathHistory implements IHistory {
 			href: `#${this.router.getUrl(to)}`,
 			onClick: (e: MouseEvent) => {
 				e.preventDefault(); onClick();
-			}
+			},
 		}, ...childNodes);
 	}
 }

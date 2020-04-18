@@ -12,7 +12,7 @@ export function addRoute(
 	let { path, children, alias, meta, component, components, ...p } = cfg;
 	let end = !(Array.isArray(children) && children.length);
 	if (!path || path === '*') {
-		path = ''
+		path = '';
 		end = false;
 	}
 	if (path[0] !== '/') {
@@ -34,7 +34,7 @@ export function addRoute(
 		meta: meta || {},
 		toPath: compile(path || '', { encode: encodeURIComponent }),
 		match: match(path || '', {end, decode: decodeURIComponent}),
-	}
+	};
 	if (alias) { named[alias] = item; }
 	if (Array.isArray(children)) {
 		item.children = children.map(c => addRoute(c, named, item));
