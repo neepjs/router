@@ -1,19 +1,11 @@
 /*!
- * NeepRouter v0.1.0-alpha.0
+ * NeepRouter v0.1.0-alpha.1
  * (c) 2020 Fierflame
  * @license MIT
  */
 import * as _mp_rt1__neep_core___NeepElement from '@neep/core';
-import { Context, Auxiliary, NeepElement, Component } from '@neep/core';
+import { Component, Context, Auxiliary, NeepElement } from '@neep/core';
 import { Match as Match$1 } from 'path-to-regexp';
-
-declare function install(neep: typeof _mp_rt1__neep_core___NeepElement): void;
-
-declare function RouterView(props: {
-    name?: string;
-    depth?: number;
-    router?: Router;
-}, { delivered }: Context, { createElement, Deliver, label }: Auxiliary): NeepElement | null | undefined;
 
 interface RouteConfig {
     path: string;
@@ -44,6 +36,13 @@ interface IHistory {
         [name: string]: any;
     }, context: Context, auxiliary: Auxiliary, onClick: () => void): NeepElement;
 }
+interface History {
+    push(location: Location, state?: any): Promise<void>;
+    replace(location: Location, state?: any): Promise<void>;
+    go(index: number): void;
+    back(): void;
+    forward(): void;
+}
 interface Location {
     path?: string;
     search?: string;
@@ -59,10 +58,20 @@ interface Match {
     route: Route;
 }
 
-declare function RouterLink(props: {
+declare function install(neep: typeof _mp_rt1__neep_core___NeepElement): void;
+
+interface ViewProps {
+    name?: string;
+    depth?: number;
+    router?: Router;
+}
+declare function RouterView(props: ViewProps, { delivered }: Context, { createElement, Deliver, label }: Auxiliary): NeepElement | null | undefined;
+
+interface LinkProps extends Location {
     to?: Location | string;
     replace?: boolean;
-} & Location, context: Context, auxiliary: Auxiliary): NeepElement;
+}
+declare function RouterLink(props: LinkProps, context: Context, auxiliary: Auxiliary): NeepElement;
 
 declare class StoreHistory implements IHistory {
     router: Router;
@@ -167,4 +176,27 @@ declare class Router {
     get view(): Component<object, object>;
 }
 
+declare module '@neep/core' {
+	interface Context {
+		readonly route?: Router;
+		readonly match?: Match;
+	}
+	interface Delivered {
+		readonly __NeepRouter__?: Router;
+		readonly __RouteDepth__?: number;
+	}
+}
+
+declare global {
+	namespace JSX {
+		interface IntrinsicElements {
+			RouterView: ViewProps,
+			'router-view': ViewProps,
+			RouterLink: LinkProps,
+			'router-link': LinkProps,
+		}
+	}
+}
+
 export default Router;
+export { History, IHistory, Location, Match, Route, RouteConfig };

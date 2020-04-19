@@ -1,5 +1,5 @@
 /*!
- * NeepRouter v0.1.0-alpha.0
+ * NeepRouter v0.1.0-alpha.1
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -35,12 +35,6 @@ function contextConstructor(context) {
     enumerable: true,
     configurable: true
   });
-}
-
-let Neep;
-function install(neep) {
-  Neep = neep;
-  Neep.addContextConstructor(contextConstructor);
 }
 
 function RouterView(props, {
@@ -112,7 +106,7 @@ function RouterLink(props, context, auxiliary) {
   } = context;
   const {
     createElement
-  } = auxiliary; // return null;screenLeft
+  } = auxiliary;
 
   if (!route) {
     return createElement('template', {}, ...childNodes);
@@ -164,11 +158,21 @@ function RouterLink(props, context, auxiliary) {
   return ((_route$history = route.history) === null || _route$history === void 0 ? void 0 : _route$history.link({ ...props,
     to
   }, context, auxiliary, onclick)) || createElement('span', {
-    onclick
+    '@click': onclick
   }, ...childNodes);
 }
 core.mSimple(RouterLink);
-core.mName('RouterView', RouterLink);
+core.mName('RouterLink', RouterLink);
+
+let Neep;
+function install(neep) {
+  Neep = neep;
+  Neep.addContextConstructor(contextConstructor);
+  Neep.register('RouterView', RouterView);
+  Neep.register('router-view', RouterView);
+  Neep.register('RouterLink', RouterLink);
+  Neep.register('router-link', RouterLink);
+}
 
 function cleanPath(path) {
   path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -924,7 +928,7 @@ class StoreHistory {
     createElement
   }, onClick) {
     return createElement('span', {
-      onClick
+      '@click': onClick
     }, ...childNodes);
   }
 
@@ -1019,7 +1023,7 @@ class WebPathHistory {
   }, onClick) {
     return createElement('a', {
       href: `${this.base}${this.router.getUrl(to)}`,
-      onClick: e => {
+      '@click': e => {
         e.preventDefault();
         onClick();
       }
@@ -1104,7 +1108,7 @@ class WebPathHistory$1 {
   }, onClick) {
     return createElement('a', {
       href: `#${this.router.getUrl(to)}`,
-      onClick: e => {
+      '@click': e => {
         e.preventDefault();
         onClick();
       }
@@ -1116,10 +1120,10 @@ class WebPathHistory$1 {
 
 
 var history$1 = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  Memory: StoreHistory,
-  WebPath: WebPathHistory,
-  WebHash: WebPathHistory$1
+	__proto__: null,
+	Memory: StoreHistory,
+	WebPath: WebPathHistory,
+	WebHash: WebPathHistory$1
 });
 
 function get(location, routes, basePath, stringifyQuery = stringify) {
@@ -1307,7 +1311,14 @@ class Router {
         } = last.route;
 
         try {
-          this.replace(`${path}${append ? '/' : '/../'}${redirect}`, state);
+          if (append) {
+            this.replace(`${path}/${redirect}`, state);
+          } else if (redirect && redirect[0] === '/') {
+            this.replace(redirect, state);
+          } else {
+            this.replace(`${path}/../${redirect}`, state);
+          }
+
           return;
         } finally {
           redirects.pop();
