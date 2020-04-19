@@ -1,7 +1,13 @@
 import { Context, Auxiliary, mName, mSimple } from '@neep/core';
 import Router from './Router';
+
+export interface ViewProps {
+	name?: string;
+	depth?: number;
+	router?: Router;
+}
 export default function RouterView(
-	props: {name?: string; depth?: number; router?: Router},
+	props: ViewProps,
 	{ delivered }: Context,
 	{ createElement, Deliver, label }: Auxiliary,
 ) {

@@ -1,13 +1,17 @@
 import { Context, Auxiliary, mName, mSimple } from '@neep/core';
 import { Location } from './type';
+
+export interface LinkProps extends Location {
+	to?: Location | string;
+	replace?: boolean;
+}
 export default function RouterLink(
-	props: { to?: Location | string; replace?: boolean} & Location,
+	props: LinkProps,
 	context: Context,
 	auxiliary: Auxiliary,
 ) {
 	const { route, childNodes } = context;
 	const { createElement } = auxiliary;
-	// return null;screenLeft
 	if (!route) { return createElement('template', {}, ...childNodes); }
 	let {to, append, replace, path, search, hash, query, alias, params} = props;
 	if (!to) {
@@ -32,4 +36,4 @@ export default function RouterLink(
 
 }
 mSimple(RouterLink);
-mName('RouterView', RouterLink);
+mName('RouterLink', RouterLink);
