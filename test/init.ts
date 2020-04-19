@@ -1,5 +1,5 @@
 import * as Neep from '@neep/core';
-import render from '@neep/web';
+import render from '@neep/web-render';
 import * as monitorable from 'monitorable';
 import * as NeepDevtools from '@neep/devtools';
 import NeepRouter from '@neep/router';
