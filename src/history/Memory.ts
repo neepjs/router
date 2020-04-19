@@ -47,6 +47,6 @@ export default class StoreHistory implements IHistory {
 		{ createElement }: Auxiliary,
 		onClick: ()=> void,
 	) {
-		return createElement('span', { onClick }, ...childNodes);
+		return createElement('span', { '@click': onClick }, ...childNodes);
 	}
 }

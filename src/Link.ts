@@ -32,7 +32,7 @@ export default function RouterLink(
 	}
 	return route
 		.history?.link({...props, to}, context, auxiliary, onclick)
-		|| createElement('span', {onclick}, ...childNodes);
+		|| createElement('span', {'@click': onclick}, ...childNodes);
 
 }
 mSimple(RouterLink);

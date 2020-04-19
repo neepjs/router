@@ -54,7 +54,7 @@ export default class WebPathHistory implements IHistory {
 	) {
 		return createElement('a', {
 			href: `#${this.router.getUrl(to)}`,
-			onClick: (e: MouseEvent) => {
+			'@click': (e: MouseEvent) => {
 				e.preventDefault(); onClick();
 			},
 		}, ...childNodes);
