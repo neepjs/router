@@ -1,11 +1,9 @@
 /*!
- * NeepRouter v0.1.0-alpha.1
+ * NeepRouter v0.1.0-alpha.2
  * (c) 2020 Fierflame
  * @license MIT
  */
-'use strict';
-
-var core = require('@neep/core');
+import { addContextConstructor, mSimple, mName, register, value, encase, Error } from '@neep/core';
 
 function _defineProperty(obj, key, value) {
   if (key in obj) {
@@ -35,6 +33,9 @@ function contextConstructor(context) {
     enumerable: true,
     configurable: true
   });
+}
+function installContextConstructor() {
+  addContextConstructor(contextConstructor);
 }
 
 function RouterView(props, {
@@ -94,8 +95,8 @@ function RouterView(props, {
     __NeepRouter__: router
   }, createElement(component, props));
 }
-core.mSimple(RouterView);
-core.mName('RouterView', RouterView);
+mSimple(RouterView);
+mName('RouterView', RouterView);
 
 function RouterLink(props, context, auxiliary) {
   var _route$history;
@@ -161,18 +162,19 @@ function RouterLink(props, context, auxiliary) {
     '@click': onclick
   }, ...childNodes);
 }
-core.mSimple(RouterLink);
-core.mName('RouterLink', RouterLink);
+mSimple(RouterLink);
+mName('RouterLink', RouterLink);
 
-let Neep;
-function install(neep) {
-  Neep = neep;
-  Neep.addContextConstructor(contextConstructor);
-  Neep.register('RouterView', RouterView);
-  Neep.register('router-view', RouterView);
-  Neep.register('RouterLink', RouterLink);
-  Neep.register('router-link', RouterLink);
+function installComponents() {
+  register('RouterView', RouterView);
+  register('router-view', RouterView);
+  register('RouterLink', RouterLink);
+  register('router-link', RouterLink);
 }
+
+function install(Neep) {}
+installComponents();
+installContextConstructor();
 
 function cleanPath(path) {
   path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -922,13 +924,28 @@ class StoreHistory {
     return this.go(1);
   }
 
-  link(props, {
-    childNodes
+  link({
+    id,
+    class: className,
+    style
+  }, {
+    childNodes,
+    emit
   }, {
     createElement
   }, onClick) {
     return createElement('span', {
-      '@click': onClick
+      id,
+      class: className,
+      style,
+      'n-on': emit.omit('click'),
+      '@click': (...any) => {
+        if (!emit('click', ...any)) {
+          return;
+        }
+
+        onClick();
+      }
     }, ...childNodes);
   }
 
@@ -1015,16 +1032,40 @@ class WebPathHistory {
   }
 
   link({
-    to
+    to,
+    onclick,
+    id,
+    class: className,
+    style
   }, {
-    childNodes
+    childNodes,
+    emit
   }, {
     createElement
   }, onClick) {
     return createElement('a', {
+      id,
+      class: className,
+      style,
       href: `${this.base}${this.router.getUrl(to)}`,
+      'n-on': emit.omit('click'),
       '@click': e => {
+        let cancel = !emit('click', e);
+
+        if (typeof onclick === 'function') {
+          onclick(e);
+        }
+
+        if (e.defaultPrevented) {
+          return;
+        }
+
         e.preventDefault();
+
+        if (cancel) {
+          return;
+        }
+
         onClick();
       }
     }, ...childNodes);
@@ -1100,16 +1141,40 @@ class WebPathHistory$1 {
   }
 
   link({
-    to
+    to,
+    onclick,
+    id,
+    class: className,
+    style
   }, {
-    childNodes
+    childNodes,
+    emit
   }, {
     createElement
   }, onClick) {
     return createElement('a', {
+      id,
+      class: className,
+      style,
       href: `#${this.router.getUrl(to)}`,
+      'n-on': emit.omit('click'),
       '@click': e => {
+        let cancel = !emit('click', e);
+
+        if (typeof onclick === 'function') {
+          onclick(e);
+        }
+
+        if (e.defaultPrevented) {
+          return;
+        }
+
         e.preventDefault();
+
+        if (cancel) {
+          return;
+        }
+
         onClick();
       }
     }, ...childNodes);
@@ -1238,27 +1303,27 @@ class Router {
 
     _defineProperty(this, "history", void 0);
 
-    _defineProperty(this, "_size", Neep.value(0));
+    _defineProperty(this, "_size", value(0));
 
     _defineProperty(this, "_nodes", []);
 
-    _defineProperty(this, "_matches", Neep.value([]));
+    _defineProperty(this, "_matches", value([]));
 
-    _defineProperty(this, "_hash", Neep.value(''));
+    _defineProperty(this, "_hash", value(''));
 
-    _defineProperty(this, "_search", Neep.value(''));
+    _defineProperty(this, "_search", value(''));
 
-    _defineProperty(this, "_alias", Neep.value(''));
+    _defineProperty(this, "_alias", value(''));
 
-    _defineProperty(this, "_path", Neep.value('/'));
+    _defineProperty(this, "_path", value('/'));
 
-    _defineProperty(this, "_state", Neep.value(undefined));
+    _defineProperty(this, "_state", value(undefined));
 
-    _defineProperty(this, "params", Neep.encase(Object.create(null)));
+    _defineProperty(this, "params", encase(Object.create(null)));
 
-    _defineProperty(this, "query", Neep.encase(Object.create(null)));
+    _defineProperty(this, "query", encase(Object.create(null)));
 
-    _defineProperty(this, "meta", Neep.encase(Object.create(null)));
+    _defineProperty(this, "meta", encase(Object.create(null)));
 
     if (History) {
       var _history$start;
@@ -1302,7 +1367,7 @@ class Router {
         redirects.push(path);
 
         if (redirects.length >= 10) {
-          throw new Neep.Error(`Too many consecutive redirect jumps: \n${redirects.join('\n')}`, 'router');
+          throw new Error(`Too many consecutive redirect jumps: \n${redirects.join('\n')}`, 'router');
         }
 
         const {
@@ -1339,7 +1404,7 @@ class Router {
       }
 
       for (let i = min; i < matchesLength; i++) {
-        nodes[i] = Neep.value(matches[i]);
+        nodes[i] = value(matches[i]);
       }
 
       nodes.length = matchesLength;
@@ -1443,7 +1508,7 @@ class Router {
       router: this
     }, ...p);
 
-    Neep.mName('Router', view);
+    mName('Router', view);
     Reflect.defineProperty(this, 'view', {
       value: view,
       enumerable: true,
@@ -1454,5 +1519,4 @@ class Router {
 
 }
 
-module.exports = Router;
-//# sourceMappingURL=neep.router.common.js.map
+export default Router;

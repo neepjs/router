@@ -1,5 +1,5 @@
 /*!
- * NeepRouter v0.1.0-alpha.1
+ * NeepRouter v0.1.0-alpha.2
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -58,7 +58,7 @@ interface Match {
     route: Route;
 }
 
-declare function install(neep: typeof _mp_rt1__neep_core___NeepElement): void;
+declare function install(Neep: typeof _mp_rt1__neep_core___NeepElement): void;
 
 interface ViewProps {
     name?: string;
@@ -83,7 +83,7 @@ declare class StoreHistory implements IHistory {
     go(index: number): [string, string, string, any] | undefined;
     back(): [string, string, string, any] | undefined;
     forward(): [string, string, string, any] | undefined;
-    link(props: any, { childNodes }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
+    link({ id, class: className, style }: any, { childNodes, emit }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
 }
 
 declare class WebPathHistory implements IHistory {
@@ -100,9 +100,10 @@ declare class WebPathHistory implements IHistory {
     go(index: number): [string, string, string, any] | undefined;
     back(): [string, string, string, any] | undefined;
     forward(): [string, string, string, any] | undefined;
-    link({ to }: {
+    link({ to, onclick, id, class: className, style }: {
         to: Location;
-    }, { childNodes }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
+        [any: string]: any;
+    }, { childNodes, emit }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
 }
 
 declare class WebPathHistory$1 implements IHistory {
@@ -115,9 +116,10 @@ declare class WebPathHistory$1 implements IHistory {
     go(index: number): [string, string, string, any] | undefined;
     back(): [string, string, string, any] | undefined;
     forward(): [string, string, string, any] | undefined;
-    link({ to }: {
+    link({ to, onclick, id, class: className, style }: {
         to: Location;
-    }, { childNodes }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
+        [any: string]: any;
+    }, { childNodes, emit }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
 }
 
 
