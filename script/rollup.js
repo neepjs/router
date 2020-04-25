@@ -26,15 +26,17 @@ const banner = `\
  * @license ${ license }
  */`;
 
-const createOutput = (format, min) => ({
+const createOutput = (format, prod) => ({
 	file: [
 		`dist/${ info.name.replace('@', '').replace(/\/|-/g, '.') }`,
-		format === 'esm' ? 'esm' : format === 'cjs' ? 'common' : '',
-		min && 'min',
-		'js',
+		...(format === 'cjs' || format === 'mjs' ? [] : [
+			format === 'esm' ? 'esm' : 'browser',
+			prod && 'min',
+		]),
+		format === 'mjs' ? 'mjs' : 'js',
 	].filter(Boolean).join('.'),
-	sourcemap: true,
-	format,
+	// sourcemap: true,
+	format: format === 'mjs' ? 'esm' : format,
 	name,
 	banner,
 	globals: {
@@ -44,40 +46,45 @@ const createOutput = (format, min) => ({
 });
 
 const external = ['@neep/core'];
+const input = 'src/index.ts';
 
 export default [
 	{
-		input: 'src/index.ts',
-		output: [ createOutput('cjs') ],
+		input,
+		output: [ createOutput('cjs'), createOutput('mjs') ],
 		external,
 		plugins: [ resolve(), babel(), replace() ],
 	},
+
 	{
-		input: 'src/index.ts',
-		output: [ createOutput('esm') ],
-		external,
-		plugins: [ resolve(), babel(), replace(true) ],
-	},
-	{
-		input: 'src/index.ts',
-		output: [ createOutput('esm', true) ],
-		external,
-		plugins: [ resolve(), babel(), replace(), terser() ],
-	},
-	{
-		input: 'src/browser.ts',
+		input,
 		output: [ createOutput('umd') ],
 		external,
-		plugins: [ resolve(), babel(), replace(true) ],
+		plugins: [ resolve(), babel(), replace(false) ],
 	},
+
 	{
-		input: 'src/browser.ts',
+		input,
 		output: [ createOutput('umd', true) ],
 		external,
-		plugins: [ resolve(), babel(), replace(), terser() ],
+		plugins: [ resolve(), babel(), replace(true), terser() ],
+	},
+
+	{
+		input,
+		output: [ createOutput('esm') ],
+		external,
+		plugins: [ resolve(true), babel(), replace(false) ],
 	},
 	{
-		input: 'src/index.ts',
+		input,
+		output: [ createOutput('esm', true) ],
+		external,
+		plugins: [ resolve(true), babel(), replace(true), terser() ],
+	},
+
+	{
+		input,
 		output: { file: 'types.d.ts', format: 'esm', banner },
 		plugins: [ dts() ],
 	},

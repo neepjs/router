@@ -21,6 +21,6 @@ export default {
 		}),
 		resolve(),
 		babel(),
-		replace(true),
+		replace(false),
 	],
 };

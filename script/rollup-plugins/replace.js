@@ -4,7 +4,19 @@ import fsFn from 'fs';
 const {
 	version,
 } = JSON.parse(fsFn.readFileSync('./package.json'));
-export default (development) => replace({
+const constants = {
 	__VERSION__: version,
-	'__MODE__': development ? 'development' : 'production',
-});
+};
+
+export default prod => {
+	if (typeof prod !== 'boolean') {
+		return replace({
+			...constants,
+		});
+	}
+	const env = prod ? 'production' : 'development';
+	return replace({
+		...constants,
+		'process.env.NODE_ENV': JSON.stringify(env),
+	});
+};

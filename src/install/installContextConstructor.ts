@@ -1,6 +1,7 @@
 import { Context } from '@neep/core';
+import { addContextConstructor } from './neep';
 
-export default function contextConstructor(context: Context) {
+export function contextConstructor(context: Context) {
 	const router = context.delivered.__NeepRouter__;
 	const depth = context.delivered.__RouteDepth__ || 0;
 	Reflect.defineProperty(context, 'route', {
@@ -13,4 +14,8 @@ export default function contextConstructor(context: Context) {
 		enumerable: true,
 		configurable: true,
 	});
+}
+
+export default function installContextConstructor() {
+	addContextConstructor(contextConstructor);
 }

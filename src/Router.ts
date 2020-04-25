@@ -1,4 +1,5 @@
-import install, { Neep } from './install';
+import install from './install';
+import { Error, value, encase } from './install/neep';
 import { Value } from 'monitorable';
 import RouterView from './View';
 import RouterLink from './Link';
@@ -7,7 +8,7 @@ import { cleanPath } from './util';
 import { addRoute, matchRoutes } from './route';
 import { stringify, parse } from './query';
 import * as history from './history';
-import { Component } from '@neep/core';
+import { Component, mName } from '@neep/core';
 
 function get(
 	location: Location | string,
@@ -71,14 +72,14 @@ class Router {
 	private _namedRoutes: Record<string, Route> = Object.create(null);
 	private _routes: Route[] = [];
 	history?: IHistory;
-	private readonly _size = Neep.value(0);
+	private readonly _size = value(0);
 	private readonly _nodes: Value<Match | undefined>[] = [];
-	private readonly _matches = Neep.value<Match[]>([]);
-	private readonly _hash = Neep.value('');
-	private readonly _search = Neep.value('');
-	private readonly _alias = Neep.value('');
-	private readonly _path = Neep.value('/');
-	private readonly _state = Neep.value(undefined as any);
+	private readonly _matches = value<Match[]>([]);
+	private readonly _hash = value('');
+	private readonly _search = value('');
+	private readonly _alias = value('');
+	private readonly _path = value('/');
+	private readonly _state = value(undefined as any);
 	get size() { return this._size(); }
 	get matches() { return this._matches(); }
 	get alias() { return this._alias(); }
@@ -86,9 +87,9 @@ class Router {
 	get search() { return this._search(); }
 	get hash() { return this._hash(); }
 	get state() { return this._state(); }
-	readonly params: Record<string, string> = Neep.encase(Object.create(null));
-	readonly query: Record<string, any> = Neep.encase(Object.create(null));
-	readonly meta: Record<string, any> = Neep.encase(Object.create(null));
+	readonly params: Record<string, string> = encase(Object.create(null));
+	readonly query: Record<string, any> = encase(Object.create(null));
+	readonly meta: Record<string, any> = encase(Object.create(null));
 	constructor({History, historyOption}: {
 		History?: {new(router: Router, opt?: any): IHistory }
 		historyOption?: any;
@@ -126,7 +127,7 @@ class Router {
 			if (last && !last.route.components) {
 				redirects.push(path);
 				if (redirects.length >= 10) {
-					throw new Neep.Error(
+					throw new Error(
 						`Too many consecutive redirect jumps: \n${
 							redirects.join('\n')
 						}`,
@@ -156,7 +157,7 @@ class Router {
 				nodes[i](undefined);
 			}
 			for (let i = min; i < matchesLength; i++) {
-				nodes[i] = Neep.value(matches[i]);
+				nodes[i] = value(matches[i]);
 			}
 			nodes.length = matchesLength;
 			this._size(matchesLength);
@@ -221,7 +222,7 @@ class Router {
 	get view() {
 		const view: Component = (props, ...p) =>
 			RouterView({...props, router: this}, ...p);
-		Neep.mName('Router', view);
+		mName('Router', view);
 		Reflect.defineProperty(this, 'view', {
 			value: view,
 			enumerable: true,
