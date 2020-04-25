@@ -86,15 +86,24 @@ export default class WebPathHistory implements IHistory {
 		return this.go(1);
 	}
 	link(
-		{to}: { to: Location },
-		{ childNodes }: Context,
+		{ to, onclick, id, class: className, style }: { to: Location; [any: string]: any },
+		{ childNodes, emit }: Context,
 		{createElement}: Auxiliary,
 		onClick: ()=> void,
 	) {
 		return createElement('a', {
+			id, class: className, style,
 			href: `${this.base}${this.router.getUrl(to)}`,
+			'n-on': emit.omit('click'),
 			'@click': (e: MouseEvent) => {
-				e.preventDefault(); onClick();
+				let cancel = !emit('click', e);
+				if (typeof onclick === 'function') {
+					onclick(e);
+				}
+				if (e.defaultPrevented) { return; }
+				e.preventDefault();
+				if (cancel) { return; }
+				onClick();
 			},
 		}, ...childNodes);
 	}

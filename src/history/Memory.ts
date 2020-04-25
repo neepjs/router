@@ -42,11 +42,18 @@ export default class StoreHistory implements IHistory {
 		return this.go(1);
 	}
 	link(
-		props: any,
-		{ childNodes }: Context,
+		{ id, class: className, style }: any,
+		{ childNodes, emit }: Context,
 		{ createElement }: Auxiliary,
 		onClick: ()=> void,
 	) {
-		return createElement('span', { '@click': onClick }, ...childNodes);
+		return createElement('span', {
+			id, class: className, style,
+			'n-on': emit.omit('click'),
+			'@click': (...any: any) => {
+				if (!emit('click', ...any)) { return; }
+				onClick();
+			},
+		}, ...childNodes);
 	}
 }
