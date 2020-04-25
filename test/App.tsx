@@ -5,10 +5,7 @@ import Info from './components/User/Info';
 import Settings from './components/User/Settings';
 import Home from './components/Home';
 const router = new Router({
-	History: Router.history.WebPath,
-	historyOption: {
-		base: `/test/bundle/`,
-	}
+	History: Router.history.WebHash,
 });
 router.setRoutes([
 	{ path: '/', redirect: '/home' },
@@ -19,7 +16,7 @@ router.setRoutes([
 	{path: '/home', component: Home},
 	{ path: '*', redirect: '/home' },
 ]);
-window.router = router;
+(window as any).router = router;
 const App = create((props, context, { createElement }) =>
 <Router.View router={router}/>
 );
