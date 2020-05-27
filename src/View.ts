@@ -1,4 +1,5 @@
-import { Context, Auxiliary, mName, mSimple } from '@neep/core';
+import { Context, mName, mSimple } from '@neep/core';
+import { createElement, Deliver, label } from './install';
 import Router from './Router';
 
 export interface ViewProps {
@@ -9,7 +10,6 @@ export interface ViewProps {
 export default function RouterView(
 	props: ViewProps,
 	{ delivered }: Context,
-	{ createElement, Deliver, label }: Auxiliary,
 ) {
 	const isNew = props.router instanceof Router;
 	const router = isNew ? props.router : delivered.__NeepRouter__;

@@ -8,7 +8,7 @@ import { cleanPath } from './util';
 import { addRoute, matchRoutes } from './route';
 import { stringify, parse } from './query';
 import * as history from './history';
-import { Component, mName } from '@neep/core';
+import { Component, mName, mSimple } from '@neep/core';
 
 function get(
 	location: Location | string,
@@ -223,6 +223,7 @@ class Router {
 		const view: Component = (props, ...p) =>
 			RouterView({...props, router: this}, ...p);
 		mName('Router', view);
+		mSimple(view);
 		Reflect.defineProperty(this, 'view', {
 			value: view,
 			enumerable: true,

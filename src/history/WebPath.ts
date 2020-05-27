@@ -1,7 +1,8 @@
 import { IHistory, Location } from '../type';
 import Router from '../Router';
 import { cleanPath } from '../util';
-import { Context, Auxiliary } from '@neep/core';
+import { Context } from '@neep/core';
+import { createElement } from '../install';
 
 export default class WebPathHistory implements IHistory {
 	readonly router: Router;
@@ -88,7 +89,6 @@ export default class WebPathHistory implements IHistory {
 	link(
 		{ to, onclick, id, class: className, style }: { to: Location; [any: string]: any },
 		{ childNodes, emit }: Context,
-		{createElement}: Auxiliary,
 		onClick: ()=> void,
 	) {
 		return createElement('a', {

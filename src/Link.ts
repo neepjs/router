@@ -1,5 +1,6 @@
-import { Context, Auxiliary, mName, mSimple } from '@neep/core';
+import { Context, mName, mSimple } from '@neep/core';
 import { Location } from './type';
+import { createElement } from './install';
 
 export interface LinkProps extends Location {
 	to?: Location | string;
@@ -8,10 +9,8 @@ export interface LinkProps extends Location {
 export default function RouterLink(
 	props: LinkProps,
 	context: Context,
-	auxiliary: Auxiliary,
 ) {
 	const { route, childNodes } = context;
-	const { createElement } = auxiliary;
 	if (!route) { return createElement('template', {}, ...childNodes); }
 	let {to, append, replace, path, search, hash, query, alias, params} = props;
 	if (!to) {
@@ -31,7 +30,7 @@ export default function RouterLink(
 		}
 	}
 	return route
-		.history?.link({...props, to}, context, auxiliary, onclick)
+		.history?.link({...props, to}, context, onclick)
 		|| createElement('span', {'@click': onclick}, ...childNodes);
 
 }

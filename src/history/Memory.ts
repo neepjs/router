@@ -1,6 +1,7 @@
 import { IHistory } from '../type';
 import Router from '../Router';
-import { Auxiliary, Context } from '@neep/core';
+import { Context } from '@neep/core';
+import { createElement } from '../install';
 
 export default class StoreHistory implements IHistory {
 	router: Router;
@@ -44,7 +45,6 @@ export default class StoreHistory implements IHistory {
 	link(
 		{ id, class: className, style }: any,
 		{ childNodes, emit }: Context,
-		{ createElement }: Auxiliary,
 		onClick: ()=> void,
 	) {
 		return createElement('span', {

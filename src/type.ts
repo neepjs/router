@@ -1,4 +1,4 @@
-import { Component, NeepElement, Context, Auxiliary } from '@neep/core';
+import { Component, NeepElement, Context } from '@neep/core';
 import * as PathToRegexp from 'path-to-regexp';
 
 export interface RouteConfig {
@@ -27,7 +27,6 @@ export interface IHistory {
 	forward(): [string, string, string, any] | undefined;
 	link( props: { to: Location; replace?: boolean; [name: string]: any },
 		context: Context,
-		auxiliary: Auxiliary,
 		onClick: ()=> void,
 	): NeepElement;
 }
