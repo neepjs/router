@@ -1,5 +1,5 @@
 /*!
- * NeepRouter v0.1.0-alpha.2
+ * NeepRouter v0.1.0-alpha.3
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -42,10 +42,6 @@ function installContextConstructor() {
 
 function RouterView(props, {
   delivered
-}, {
-  createElement,
-  Deliver,
-  label
 }) {
   const isNew = props.router instanceof Router;
   const router = isNew ? props.router : delivered.__NeepRouter__;
@@ -91,28 +87,25 @@ function RouterView(props, {
     return null;
   }
 
-  label(`[path=${match.path}]`, '#987654');
-  return createElement(Deliver, {
+  core.label(`[path=${match.path}]`, '#987654');
+  return core.createElement(core.Deliver, {
     __RouteDepth__: depth,
     __NeepRouter__: router
-  }, createElement(component, props));
+  }, core.createElement(component, props));
 }
 core.mSimple(RouterView);
 core.mName('RouterView', RouterView);
 
-function RouterLink(props, context, auxiliary) {
+function RouterLink(props, context) {
   var _route$history;
 
   const {
     route,
     childNodes
   } = context;
-  const {
-    createElement
-  } = auxiliary;
 
   if (!route) {
-    return createElement('template', {}, ...childNodes);
+    return core.createElement('template', {}, ...childNodes);
   }
 
   let {
@@ -160,7 +153,7 @@ function RouterLink(props, context, auxiliary) {
 
   return ((_route$history = route.history) === null || _route$history === void 0 ? void 0 : _route$history.link({ ...props,
     to
-  }, context, auxiliary, onclick)) || createElement('span', {
+  }, context, onclick)) || core.createElement('span', {
     '@click': onclick
   }, ...childNodes);
 }
@@ -933,10 +926,8 @@ class StoreHistory {
   }, {
     childNodes,
     emit
-  }, {
-    createElement
   }, onClick) {
-    return createElement('span', {
+    return core.createElement('span', {
       id,
       class: className,
       style,
@@ -1042,10 +1033,8 @@ class WebPathHistory {
   }, {
     childNodes,
     emit
-  }, {
-    createElement
   }, onClick) {
-    return createElement('a', {
+    return core.createElement('a', {
       id,
       class: className,
       style,
@@ -1151,10 +1140,8 @@ class WebPathHistory$1 {
   }, {
     childNodes,
     emit
-  }, {
-    createElement
   }, onClick) {
-    return createElement('a', {
+    return core.createElement('a', {
       id,
       class: className,
       style,
@@ -1511,6 +1498,7 @@ class Router {
     }, ...p);
 
     core.mName('Router', view);
+    core.mSimple(view);
     Reflect.defineProperty(this, 'view', {
       value: view,
       enumerable: true,

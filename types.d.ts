@@ -1,10 +1,10 @@
 /*!
- * NeepRouter v0.1.0-alpha.2
+ * NeepRouter v0.1.0-alpha.3
  * (c) 2020 Fierflame
  * @license MIT
  */
 import * as _mp_rt1__neep_core___NeepElement from '@neep/core';
-import { Component, Context, Auxiliary, NeepElement } from '@neep/core';
+import { Component, Context, NeepElement } from '@neep/core';
 import { Match as Match$1 } from 'path-to-regexp';
 
 interface RouteConfig {
@@ -34,7 +34,7 @@ interface IHistory {
         to: Location;
         replace?: boolean;
         [name: string]: any;
-    }, context: Context, auxiliary: Auxiliary, onClick: () => void): NeepElement;
+    }, context: Context, onClick: () => void): NeepElement;
 }
 interface History {
     push(location: Location, state?: any): Promise<void>;
@@ -65,13 +65,13 @@ interface ViewProps {
     depth?: number;
     router?: Router;
 }
-declare function RouterView(props: ViewProps, { delivered }: Context, { createElement, Deliver, label }: Auxiliary): NeepElement | null | undefined;
+declare function RouterView(props: ViewProps, { delivered }: Context): NeepElement | null | undefined;
 
 interface LinkProps extends Location {
     to?: Location | string;
     replace?: boolean;
 }
-declare function RouterLink(props: LinkProps, context: Context, auxiliary: Auxiliary): NeepElement;
+declare function RouterLink(props: LinkProps, context: Context): NeepElement;
 
 declare class StoreHistory implements IHistory {
     router: Router;
@@ -83,7 +83,7 @@ declare class StoreHistory implements IHistory {
     go(index: number): [string, string, string, any] | undefined;
     back(): [string, string, string, any] | undefined;
     forward(): [string, string, string, any] | undefined;
-    link({ id, class: className, style }: any, { childNodes, emit }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
+    link({ id, class: className, style }: any, { childNodes, emit }: Context, onClick: () => void): NeepElement;
 }
 
 declare class WebPathHistory implements IHistory {
@@ -103,7 +103,7 @@ declare class WebPathHistory implements IHistory {
     link({ to, onclick, id, class: className, style }: {
         to: Location;
         [any: string]: any;
-    }, { childNodes, emit }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
+    }, { childNodes, emit }: Context, onClick: () => void): NeepElement;
 }
 
 declare class WebPathHistory$1 implements IHistory {
@@ -119,7 +119,7 @@ declare class WebPathHistory$1 implements IHistory {
     link({ to, onclick, id, class: className, style }: {
         to: Location;
         [any: string]: any;
-    }, { childNodes, emit }: Context, { createElement }: Auxiliary, onClick: () => void): NeepElement;
+    }, { childNodes, emit }: Context, onClick: () => void): NeepElement;
 }
 
 
