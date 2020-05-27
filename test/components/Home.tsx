@@ -1,11 +1,7 @@
-import { create, mark, mName } from '@neep/core';
+import { create, mark, mName, createElement, Template } from '@neep/core';
 import Router from '@neep/router';
 
-const Home = create((
-	props: { a?: any,  set?: () => void},
-	{ slots, delivered, route },
-	{ Template, Slot, createElement, useValue }
-) => {
+const Home = () => {
 	return <Template>
 		<div>首页</div>
 		<hr />
@@ -15,5 +11,5 @@ const Home = create((
 		<hr />
 		<Router.View />
 	</Template>;
-});
+};
 export default mark(Home, mName('Home'));

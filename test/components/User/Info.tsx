@@ -1,9 +1,8 @@
-import { create, mark, mName } from '@neep/core';
+import { create, mark, mName, createElement, Template, useValue } from '@neep/core';
 
 const Info = create((
 	props: { a?: any,  set?: () => void},
-	{ slots, delivered, route },
-	{ Template, Slot, createElement, useValue }
+	{ route },
 ) => {
 	const v = useValue(() => Math.random());
 	return <Template>

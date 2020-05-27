@@ -1,4 +1,3 @@
-import { create, mName, mark } from '@neep/core';
 import Router from '@neep/router';
 import User from './components/User';
 import Info from './components/User/Info';
@@ -17,8 +16,4 @@ router.setRoutes([
 	{ path: '*', redirect: '/home' },
 ]);
 (window as any).router = router;
-const App = create((props, context, { createElement }) =>
-<Router.View router={router}/>
-);
-
-export default mark(App, mName('App'));
+export default router.view;

@@ -1,10 +1,9 @@
-import { create, mark, mName } from '@neep/core';
+import { create, mark, mName, createElement, Template } from '@neep/core';
 import Router from '@neep/router';
 
 const User = create((
 	props: { a?: any,  set?: () => void},
-	{ slots, delivered, route },
-	{ Template, Slot, createElement, useValue }
+	{ route },
 ) => {
 	return <Template>
 		<div>用户首页</div>

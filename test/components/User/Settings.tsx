@@ -1,9 +1,8 @@
-import { create, mark, mName } from '@neep/core';
+import { create, mark, mName, createElement, Template } from '@neep/core';
 
 const Settings = create((
 	props: { a?: any,  set?: () => void},
-	{ slots, delivered, route },
-	{ Template, Slot, createElement, useValue }
+	{ route },
 ) => {
 	return <Template>
 		<div>用户设置</div>
