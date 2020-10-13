@@ -1001,7 +1001,7 @@
   }
 
   /*!
-   * Neep v0.1.0-alpha.13
+   * Neep v0.1.0-alpha.15
    * (c) 2019-2020 Fierflame
    * @license MIT
    */
@@ -1111,6 +1111,117 @@
 
     {
       installDevtools(apis.devtools);
+    }
+  }
+
+  let current;
+
+  function setCurrent(fn, entity) {
+    const oldEntity = current;
+    current = entity;
+
+    try {
+      current.$_valueIndex = 0;
+      current.$_serviceIndex = 0;
+      const ret = fn();
+
+      if (current.$_valueIndex !== current.$_values.length) {
+        throw new NeepError('Inconsistent number of useValue executions', 'life');
+      }
+
+      if (current.$_serviceIndex && current.$_serviceIndex !== current.$_services.length) {
+        throw new NeepError('Inconsistent number of useService executions', 'life');
+      }
+
+      return ret;
+    } finally {
+      current = oldEntity;
+    }
+  }
+
+  function checkCurrent(name, initOnly = false) {
+    if (!current) {
+      throw new NeepError(`Function \`${name}\` can only be called within a cycle.`, 'life');
+    }
+
+    if (!initOnly) {
+      return current;
+    }
+
+    if (!current.created) {
+      return current;
+    }
+
+    throw new NeepError(`Function \`${name}\` can only be called at initialization time.`, 'life');
+  }
+
+  const constructors = [];
+
+  function initContext(context, entity) {
+    for (const constructor of constructors) {
+      constructor(context, entity);
+    }
+
+    return context;
+  }
+
+  function addContextConstructor(constructor) {
+    constructors.push(safeify(constructor));
+  }
+
+  const constructors$1 = [];
+
+  function initEntity(entity) {
+    for (const constructor of constructors$1) {
+      constructor(entity);
+    }
+
+    return entity;
+  }
+
+  let delayedRefresh = 0;
+  const objectSet = new Set();
+
+  function wait$1(obj) {
+    if (delayedRefresh <= 0) {
+      return false;
+    }
+
+    objectSet.add(obj);
+    return true;
+  }
+
+  function run$2() {
+    if (delayedRefresh > 0) {
+      return;
+    }
+
+    const list = [...objectSet];
+    objectSet.clear();
+    list.forEach(o => o.refresh());
+  }
+
+  async function asyncRefresh(f) {
+    try {
+      delayedRefresh++;
+      return await f();
+    } finally {
+      delayedRefresh--;
+      run$2();
+    }
+  }
+
+  function refresh(f, async) {
+    if (async) {
+      return asyncRefresh(f);
+    }
+
+    try {
+      delayedRefresh++;
+      return f();
+    } finally {
+      delayedRefresh--;
+      run$2();
     }
   }
 
@@ -1260,13 +1371,15 @@
             return true;
           }
 
-          let res = true;
+          return refresh(() => {
+            let res = true;
 
-          for (const fn of [...event]) {
-            res = fn(...p) && res;
-          }
+            for (const fn of [...event]) {
+              res = fn(...p) && res;
+            }
 
-          return res;
+            return res;
+          });
         }
 
         emit.omit = (...names) => createEmit(...omitNames, ...names);
@@ -1288,8 +1401,8 @@
           try {
             return listener(...p) !== false;
           } catch (e) {
-            console.error(e);
-            return false;
+            printError(e);
+            return true;
           }
         }
 
@@ -1350,122 +1463,13 @@
 
   }
 
-  const ScopeSlot = 'Neep:ScopeSlot';
-  const SlotRender = 'Neep:SlotRender';
-  const Slot = 'Neep:Slot';
-  const Value = 'Neep:Value';
-  const Deliver = 'Neep:Deliver';
+  const ScopeSlot = 'neep:ScopeSlot';
+  const SlotRender = 'neep:SlotRender';
+  const Slot = 'neep:slot';
+  const Value = 'neep:value';
+  const Container = 'neep:container';
   const Template = 'template';
-  let current;
-
-  function setCurrent(fn, entity) {
-    const oldEntity = current;
-    current = entity;
-
-    try {
-      current.$_valueIndex = 0;
-      current.$_serviceIndex = 0;
-      const ret = fn();
-
-      if (current.$_valueIndex !== current.$_values.length) {
-        throw new NeepError('Inconsistent number of useValue executions', 'life');
-      }
-
-      if (current.$_serviceIndex && current.$_serviceIndex !== current.$_services.length) {
-        throw new NeepError('Inconsistent number of useService executions', 'life');
-      }
-
-      return ret;
-    } finally {
-      current = oldEntity;
-    }
-  }
-
-  function checkCurrent(name, initOnly = false) {
-    if (!current) {
-      throw new NeepError(`Function \`${name}\` can only be called within a cycle.`, 'life');
-    }
-
-    if (!initOnly) {
-      return current;
-    }
-
-    if (!current.created) {
-      return current;
-    }
-
-    throw new NeepError(`Function \`${name}\` can only be called at initialization time.`, 'life');
-  }
-
-  const constructors = [];
-
-  function initContext(context, entity) {
-    for (const constructor of constructors) {
-      constructor(context, entity);
-    }
-
-    return context;
-  }
-
-  function addContextConstructor(constructor) {
-    constructors.push(safeify(constructor));
-  }
-
-  const constructors$1 = [];
-
-  function initEntity(entity) {
-    for (const constructor of constructors$1) {
-      constructor(entity);
-    }
-
-    return entity;
-  }
-
-  let delayedRefresh = 0;
-  const objectSet = new Set();
-
-  function wait$1(obj) {
-    if (delayedRefresh <= 0) {
-      return false;
-    }
-
-    objectSet.add(obj);
-    return true;
-  }
-
-  function run$2() {
-    if (delayedRefresh > 0) {
-      return;
-    }
-
-    const list = [...objectSet];
-    objectSet.clear();
-    list.forEach(o => o.refresh());
-  }
-
-  async function asyncRefresh(f) {
-    try {
-      delayedRefresh++;
-      return await f();
-    } finally {
-      delayedRefresh--;
-      run$2();
-    }
-  }
-
-  function refresh(f, async) {
-    if (async) {
-      return asyncRefresh(f);
-    }
-
-    try {
-      delayedRefresh++;
-      return f();
-    } finally {
-      delayedRefresh--;
-      run$2();
-    }
-  }
+  const Fragment = Template;
 
   const hooks = Object.create(null);
 
@@ -1520,12 +1524,16 @@
     return values[index];
   }
 
-  const isElementSymbol = Symbol.for('isNeepElement');
   const typeSymbol = Symbol.for('type');
   const nameSymbol = Symbol.for('name');
   const renderSymbol = Symbol.for('render');
   const componentsSymbol = Symbol.for('components');
   const configSymbol = Symbol.for('config');
+  const objectTypeSymbol = Symbol.for('$$$objectType$$$');
+  const objectTypeSymbolElement = '$$$objectType$$$Element';
+  const objectTypeSymbolDeliver = '$$$objectType$$$Deliver';
+  const deliverKeySymbol = Symbol.for('$$$deliverKey$$$');
+  const deliverDefaultSymbol = Symbol.for('$$$deliverDefault$$$');
 
   function isElement(v) {
     if (!v) {
@@ -1536,74 +1544,172 @@
       return false;
     }
 
-    return v[isElementSymbol] === true;
+    return v[objectTypeSymbol] === objectTypeSymbolElement;
   }
 
   function createElement(tag, attrs, ...children) {
-    attrs = attrs ? { ...attrs
+    const props = attrs ? { ...attrs
     } : {};
     const node = {
-      [isElementSymbol]: true,
+      [objectTypeSymbol]: objectTypeSymbolElement,
       tag,
       key: undefined,
-      children: []
+      props,
+      children
     };
 
-    if ('n:key' in attrs) {
-      node.key = attrs.key;
-    } else if ('n-key' in attrs) {
-      node.key = attrs.key;
+    if ('n:key' in props) {
+      node.key = props['n:key'];
+    } else if ('n-key' in props) {
+      node.key = props['n-key'];
+    } else if ('key' in props) {
+      node.key = props.key;
     }
 
-    if ('slot' in attrs) {
-      node.slot = attrs.slot;
+    if ('n:slot' in props) {
+      node.slot = props['n:slot'];
+    } else if ('n-slot' in props) {
+      node.slot = props['n-slot'];
+    } else if ('slot' in props) {
+      node.slot = props.slot;
     }
 
-    if (typeof attrs.ref === 'function') {
-      node.ref = attrs.ref;
+    if (typeof props['n:ref'] === 'function') {
+      node.ref = props['n:ref'];
+    } else if (typeof props['n-ref'] === 'function') {
+      node.ref = props['n-ref'];
+    } else if (typeof props.ref === 'function') {
+      node.ref = props.ref;
     }
 
     if (tag === Value) {
-      node.value = attrs.value;
-      return node;
-    }
-
-    node.children = children;
-
-    if (tag === Template) {
-      return node;
-    }
-
-    if (tag === SlotRender) {
-      node.render = attrs.render;
-      return node;
-    }
-
-    if (tag === ScopeSlot || tag === Slot) {
-      const {
-        render,
-        argv,
-        args,
-        name
-      } = attrs;
-      node.render = render;
-      node.args = argv && [argv] || Array.isArray(args) && args.length && args || [{}];
-
-      if (tag === ScopeSlot) {
-        node.props = {
-          name
-        };
-        return node;
-      }
-    }
-
-    node.props = {};
-
-    for (let k in attrs) {
-      node.props[k] = attrs[k];
+      node.value = props.value;
     }
 
     return node;
+  }
+
+  function equalProps(a, b) {
+    if (Object.is(a, b)) {
+      return true;
+    }
+
+    if (!a) {
+      return false;
+    }
+
+    if (!b) {
+      return false;
+    }
+
+    if (typeof a !== 'object') {
+      return false;
+    }
+
+    if (typeof b !== 'object') {
+      return false;
+    }
+
+    const aKeys = new Set(Reflect.ownKeys(a));
+    const bKeys = Reflect.ownKeys(b);
+
+    if (aKeys.size !== bKeys.length) {
+      return false;
+    }
+
+    for (const k of bKeys) {
+      if (!aKeys.has(k)) {
+        return false;
+      }
+
+      if (a[k] !== b[k]) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function equal(a, b) {
+    if (Object.is(a, b)) {
+      return true;
+    }
+
+    if (!a) {
+      return false;
+    }
+
+    if (!b) {
+      return false;
+    }
+
+    if (typeof a !== 'object') {
+      return false;
+    }
+
+    if (typeof b !== 'object') {
+      return false;
+    }
+
+    if (Array.isArray(a)) {
+      if (!Array.isArray(b)) {
+        return false;
+      }
+
+      if (a.length !== b.length) {
+        return false;
+      }
+
+      for (let i = a.length - 1; i >= 0; i--) {
+        if (!equal(a[i], b[i])) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    if (Array.isArray(b)) {
+      return false;
+    }
+
+    if (!isElement(a)) {
+      return false;
+    }
+
+    if (!isElement(b)) {
+      return false;
+    }
+
+    if (a.tag !== b.tag) {
+      return false;
+    }
+
+    if (a.execed !== b.execed) {
+      return false;
+    }
+
+    if (a.inserted !== b.inserted) {
+      return false;
+    }
+
+    if (a.ref !== b.ref) {
+      return false;
+    }
+
+    if (a.value !== b.value) {
+      return false;
+    }
+
+    if (a.key !== b.key) {
+      return false;
+    }
+
+    if (a.slot !== b.slot) {
+      return false;
+    }
+
+    return equalProps(a.props, b.props) && equal(a.children, b.children);
   }
 
   let label;
@@ -1630,6 +1736,41 @@
         configurable: true
       });
     }
+  }
+
+  function createDeliver(def) {
+    const symbol = Symbol();
+
+    function Provider(_, {
+      childNodes
+    }) {
+      return childNodes;
+    }
+
+    Reflect.defineProperty(Provider, objectTypeSymbol, {
+      value: objectTypeSymbolDeliver
+    });
+    Reflect.defineProperty(Provider, deliverKeySymbol, {
+      value: symbol
+    });
+    Reflect.defineProperty(Provider, deliverDefaultSymbol, {
+      value: def
+    });
+    return Provider;
+  }
+
+  function isDeliver(d) {
+    if (typeof d !== 'function') {
+      return false;
+    }
+
+    return d[objectTypeSymbol] === objectTypeSymbolDeliver;
+  }
+
+  function getDelivered(delivered, Deliver) {
+    assert(isDeliver(Deliver), '');
+    const value = delivered[Deliver[deliverKeySymbol]];
+    return value === undefined ? Deliver[deliverDefaultSymbol] : value;
   }
 
   let ids = 0;
@@ -1837,9 +1978,17 @@
       });
     }
 
+    if (isDeliver(tag)) {
+      return createMountedNode({ ...source,
+        node: undefined,
+        component: undefined,
+        children: createAll(iRender, source.children)
+      });
+    }
+
     const ltag = typeof tag !== 'string' ? '' : tag.toLowerCase();
 
-    if (typeof tag !== 'string' || ltag === 'neep:container') {
+    if (typeof tag !== 'string' || ltag === Container) {
       if (!component) {
         return createMountedNode({ ...source,
           node: undefined,
@@ -1857,7 +2006,7 @@
       });
     }
 
-    if (ltag === 'neep:value') {
+    if (ltag === Value) {
       let {
         value
       } = source;
@@ -1877,7 +2026,7 @@
       });
     }
 
-    const node = iRender.createElement(tag, source.props || {});
+    const node = iRender.createElement(tag);
     setRef(ref, node);
     let children = [];
 
@@ -1889,6 +2038,7 @@
       }
     }
 
+    iRender.updateProps(node, source.props || {});
     return createMountedNode({ ...source,
       node,
       component: undefined,
@@ -2030,7 +2180,7 @@
 
   function updateAll(iRender, source, tree) {
     let index = 0;
-    let length = Math.min(source.length, source.length || 1);
+    let length = Math.min(source.length, tree.length);
     const list = [];
 
     for (; index < length; index++) {
@@ -2045,13 +2195,13 @@
 
     length = Math.max(source.length, tree.length);
 
-    if (tree.length > length) {
+    if (tree.length > index) {
       for (; index < length; index++) {
         unmount(iRender, tree[index]);
       }
     }
 
-    if (source.length > length) {
+    if (source.length > index) {
       const last = getLastNode(list[list.length - 1]);
       const parent = iRender.getParent(last);
       const next = iRender.nextNode(last);
@@ -2097,13 +2247,21 @@
       return replace(iRender, createItem(iRender, source), tree);
     }
 
+    if (isDeliver(tag)) {
+      return createMountedNode({ ...source,
+        node: undefined,
+        component: undefined,
+        children: updateAll(iRender, source.children, tree.children)
+      }, tree.id);
+    }
+
     if (!tag) {
       return tree;
     }
 
     const ltag = typeof tag !== 'string' ? '' : tag.toLowerCase();
 
-    if (typeof tag !== 'string' || ltag === 'neep:container') {
+    if (typeof tag !== 'string' || ltag === Container) {
       if (!component) {
         return createMountedNode({ ...source,
           node: undefined,
@@ -2120,7 +2278,7 @@
       }, tree.id);
     }
 
-    if (ltag === 'neep:value') {
+    if (ltag === Value) {
       let {
         value
       } = source;
@@ -2152,36 +2310,25 @@
     const {
       node
     } = tree;
-    iRender.updateProps(node, source.props || {});
     setRef(ref, node);
-
-    if (!source.children.length && !tree.children.length) {
-      return createMountedNode({ ...tree,
-        ...source,
-        children: []
-      }, tree.id);
-    }
+    let children = [];
 
     if (!source.children.length && tree.children.length) {
       unmount(iRender, tree.children);
-    }
-
-    if (source.children.length && !tree.children.length) {
-      const children = createAll(iRender, source.children);
+    } else if (source.children.length && tree.children.length) {
+      children = updateAll(iRender, source.children, tree.children);
+    } else if (source.children.length && !tree.children.length) {
+      children = createAll(iRender, source.children);
 
       for (const it of getNodes(children)) {
         iRender.insertNode(node, it);
       }
-
-      return createMountedNode({ ...tree,
-        ...source,
-        children
-      }, tree.id);
     }
 
+    iRender.updateProps(node, source.props || {});
     return createMountedNode({ ...tree,
       ...source,
-      children: updateAll(iRender, source.children, tree.children)
+      children
     }, tree.id);
   }
 
@@ -2212,6 +2359,27 @@
         continue;
       }
 
+      if (isElement(it) && it.slot === undefined) {
+        if (typeof it.tag === 'function' && it.tag[typeSymbol] === 'simple' && it.execed || it.tag === Template) {
+          const list = Object.create(null);
+          nativeList.push(getSlots(iRender, it.children, list, native));
+
+          for (const k of Reflect.ownKeys(list)) {
+            const node = { ...it,
+              children: list[k]
+            };
+
+            if (k in slots) {
+              slots[k].push(node);
+            } else {
+              slots[k] = [node];
+            }
+          }
+
+          continue;
+        }
+      }
+
       if (native) {
         if (iRender.isNode(it)) {
           nativeList.push(it);
@@ -2223,7 +2391,7 @@
           continue;
         }
 
-        if (it.tag !== SlotRender) {
+        if (it.tag !== SlotRender && it.tag !== Template) {
           nativeList.push(it);
           continue;
         }
@@ -2263,17 +2431,27 @@
         };
       }
 
-      if (typeof it.render === 'function') {
-        return it.render(...props);
+      const {
+        children
+      } = it;
+
+      if ((children === null || children === void 0 ? void 0 : children.length) !== 1) {
+        return children;
       }
 
-      return it.children;
+      const [render] = children;
+
+      if (isValue(render) || typeof render !== 'function') {
+        return children;
+      }
+
+      return render(...props);
     });
   }
 
   function createSlots(name, list) {
     const slot = (...props) => ({
-      [isElementSymbol]: true,
+      [objectTypeSymbol]: objectTypeSymbolElement,
       tag: ScopeSlot,
       children: renderSlots(list, ...props),
       inserted: true,
@@ -2284,188 +2462,40 @@
     return slot;
   }
 
-  function setSlots(children, slots = Object.create(null)) {
+  function setSlots(children, slots = Object.create(null), oldChildren) {
     for (const k of Reflect.ownKeys(slots)) {
-      if (!(k in children)) {
-        delete slots[k];
+      if (k in children) {
+        continue;
       }
+
+      delete slots[k];
+    }
+
+    if (!oldChildren) {
+      for (const k of Reflect.ownKeys(children)) {
+        slots[k] = createSlots(k, children[k]);
+      }
+
+      return slots;
     }
 
     for (const k of Reflect.ownKeys(children)) {
-      slots[k] = createSlots(k, children[k]);
+      const list = children[k];
+
+      if (equal(list, oldChildren[k])) {
+        continue;
+      }
+
+      slots[k] = createSlots(k, list);
     }
 
     return slots;
-  }
-
-  const disabledKey = new Set([':', '@', '#', '*', '!', '%', '^', '~', '&', '=', '+', '.', '(', ')', '[', ']', '{', '}', '<', '>']);
-
-  function filter(k) {
-    if (typeof k !== 'string') {
-      return true;
-    }
-
-    if (disabledKey.has(k[0])) {
-      return false;
-    }
-
-    if (/^n[:-]/.test(k)) {
-      return false;
-    }
-
-    if (/^on[:-]/.test(k)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  function updateProps(obj, props, oldProps = {}, define = false, isProps = false) {
-    const keys = Reflect.ownKeys(props);
-    const newKeys = new Set(isProps ? keys.filter(filter) : keys);
-
-    for (const k of Reflect.ownKeys(obj)) {
-      if (!newKeys.has(k)) {
-        delete obj[k];
-      }
-    }
-
-    if (!define) {
-      for (const k of newKeys) {
-        obj[k] = props[k];
-      }
-
-      return obj;
-    }
-
-    for (const k of newKeys) {
-      const value = props[k];
-
-      if (k in oldProps && oldProps[k] === value) {
-        continue;
-      }
-
-      if (isValue(value)) {
-        Reflect.defineProperty(obj, k, {
-          configurable: true,
-          enumerable: true,
-
-          get() {
-            return value();
-          },
-
-          set(v) {
-            value(v);
-          }
-
-        });
-        continue;
-      }
-
-      Reflect.defineProperty(obj, k, {
-        configurable: true,
-        enumerable: true,
-        value
-      });
-    }
-
-    return obj;
   }
 
   const components = Object.create(null);
 
   function register(name, component) {
     components[name] = component;
-  }
-
-  function getComponents(...components) {
-    return components.filter(Boolean);
-  }
-
-  function execSimple(nObject, delivered, node, tag, components, children) {
-    if (node.execed) {
-      return node;
-    }
-
-    const {
-      iRender
-    } = nObject;
-    const slotMap = Object.create(null);
-    getSlots(iRender, children, slotMap);
-    const slots = setSlots(slotMap);
-    const event = new EventEmitter();
-    event.updateInProps(node.props);
-    const props = { ...node.props
-    };
-    const context = initContext({
-      slots,
-      created: false,
-      parent: nObject.exposed,
-      delivered,
-      children: new Set(),
-      childNodes: children,
-
-      refresh(f) {
-        nObject.refresh(f);
-      },
-
-      emit: event.emit
-    });
-
-    {
-      getLabel();
-    }
-
-    const result = tag(props, context);
-    let label;
-
-    {
-      label = getLabel();
-    }
-
-    const nodes = init(nObject, delivered, renderNode(nObject.iRender, result, context, tag[renderSymbol]), slots, getComponents(...components, tag[componentsSymbol]), false);
-    return { ...node,
-      tag,
-      execed: true,
-      children: Array.isArray(nodes) ? nodes : [nodes],
-      label
-    };
-  }
-
-  function exec$1(nObject, delivered, node, components) {
-    if (Array.isArray(node)) {
-      return node.map(n => exec$1(nObject, delivered, n, components));
-    }
-
-    if (!isElement(node)) {
-      return node;
-    }
-
-    let {
-      tag,
-      children
-    } = node;
-
-    if (tag === Deliver) {
-      const props = { ...node.props
-      };
-      delete props.ref;
-      delete props.slot;
-      delete props.key;
-      return { ...node,
-        tag,
-        children: children.map(n => exec$1(nObject, updateProps(Object.create(delivered), props || {}, {}, true), n, components))
-      };
-    }
-
-    if (typeof tag !== 'function' || tag[typeSymbol] !== 'simple') {
-      return { ...node,
-        tag,
-        children: children.map(n => exec$1(nObject, delivered, n, components))
-      };
-    }
-
-    return execSimple(nObject, delivered, node, tag, components, children);
   }
 
   function findComponent(tag, components$1) {
@@ -2496,11 +2526,25 @@
     return components[tag] || tag;
   }
 
-  function replaceNode(node, slots, components, native) {
+  function getChildren(children, args) {
+    if (children.length !== 1) {
+      return children;
+    }
+
+    const [fn] = children;
+
+    if (typeof fn !== 'function') {
+      return children;
+    }
+
+    return fn(...args);
+  }
+
+  function replaceNode(node, slots, components, native, isRoot) {
     var _node$props;
 
     if (Array.isArray(node)) {
-      return node.map(n => replaceNode(n, slots, components, native));
+      return node.map(n => replaceNode(n, slots, components, native, isRoot));
     }
 
     if (!isElement(node)) {
@@ -2509,9 +2553,13 @@
 
     let {
       children,
-      args = [{}]
+      props
     } = node;
     let tag = findComponent(node.tag, components);
+
+    if (tag === SlotRender && isRoot) {
+      return null;
+    }
 
     if (tag === Slot) {
       tag = native ? 'slot' : ScopeSlot;
@@ -2520,7 +2568,7 @@
     if (tag !== ScopeSlot) {
       return { ...node,
         tag,
-        children: replaceNode(children, slots, components, native)
+        children: replaceNode(children, slots, components, native, isRoot)
       };
     }
 
@@ -2528,6 +2576,7 @@
       return node;
     }
 
+    const args = (props === null || props === void 0 ? void 0 : props.argv) && [props.argv] || Array.isArray(props === null || props === void 0 ? void 0 : props.args) && (props === null || props === void 0 ? void 0 : props.args.length) && props.args || [{}];
     const slotName = ((_node$props = node.props) === null || _node$props === void 0 ? void 0 : _node$props.name) || 'default';
     const slot = slots[slotName];
 
@@ -2537,14 +2586,171 @@
       };
     }
 
-    const {
-      render
-    } = node;
     const label =  [`[${slotName}]`, '#00F'];
     return { ...node,
       tag: ScopeSlot,
       label,
-      children: replaceNode(typeof render !== 'function' ? children : render(...args), slots, components, native)
+      children: replaceNode(getChildren(children, args), slots, components, native, false)
+    };
+  }
+
+  function getComponents(...components) {
+    return components.filter(Boolean);
+  }
+
+  function execSimple(nObject, delivered, node, tag, components, children) {
+    if (node.execed) {
+      return node;
+    }
+
+    const {
+      iRender
+    } = nObject;
+    const slotMap = Object.create(null);
+    getSlots(iRender, children, slotMap);
+    const slots = setSlots(slotMap);
+    const event = new EventEmitter();
+    event.updateInProps(node.props);
+    const props = { ...node.props
+    };
+    const context = initContext({
+      slots,
+      created: false,
+      parent: nObject.exposed,
+
+      delivered(deliver) {
+        return getDelivered(delivered, deliver);
+      },
+
+      children: new Set(),
+      childNodes: children,
+
+      refresh(f) {
+        nObject.refresh(f);
+      },
+
+      emit: event.emit
+    });
+
+    {
+      getLabel();
+    }
+
+    const result = tag(props, context);
+    let label;
+
+    {
+      label = getLabel();
+    }
+
+    const nodes = init(nObject, delivered, renderNode(nObject.iRender, result, context, tag[renderSymbol]), slots, getComponents(...components, tag[componentsSymbol]), false);
+    return { ...node,
+      tag,
+      execed: true,
+      children: Array.isArray(nodes) ? nodes : [nodes],
+      label
+    };
+  }
+
+  function getSlotRenderFn(nObject, delivered, children, slots, components, native) {
+    if (children.length !== 1) {
+      return null;
+    }
+
+    const [renderFn] = children;
+
+    if (isValue(renderFn) || typeof renderFn !== 'function') {
+      return null;
+    }
+
+    const {
+      slotRenderFnList
+    } = nObject;
+    const fn = slotRenderFnList.get(renderFn);
+
+    if (fn) {
+      return fn;
+    }
+
+    const newFn = function (...p) {
+      return init(nObject, delivered, renderFn.call(this, ...p), slots, components, native);
+    };
+
+    slotRenderFnList.set(renderFn, newFn);
+    return newFn;
+  }
+
+  function exec$1(nObject, delivered, node, slots, components, native) {
+    if (Array.isArray(node)) {
+      return node.map(n => exec$1(nObject, delivered, n, slots, components, native));
+    }
+
+    if (!isElement(node)) {
+      return node;
+    }
+
+    let {
+      tag,
+      children
+    } = node;
+
+    if (isDeliver(tag)) {
+      const newDelivered = Object.create(delivered);
+      Reflect.defineProperty(newDelivered, tag[deliverKeySymbol], {
+        configurable: true,
+        enumerable: true,
+        value: node.props ? node.props.value : undefined
+      });
+      return { ...node,
+        tag,
+        children: children.map(child => exec$1(nObject, newDelivered, child, slots, components, native))
+      };
+    }
+
+    if (tag === SlotRender) {
+      const slotRenderFn = getSlotRenderFn(nObject, delivered, children, slots, components, native);
+
+      if (slotRenderFn) {
+        return { ...node,
+          children: [slotRenderFn]
+        };
+      }
+    }
+
+    if (typeof tag !== 'function' || tag[typeSymbol] !== 'simple') {
+      return { ...node,
+        tag,
+        children: children.map(n => exec$1(nObject, delivered, n, slots, components, native))
+      };
+    }
+
+    return execSimple(nObject, delivered, node, tag, components, children);
+  }
+
+  function getItem(node) {
+    if (Array.isArray(node)) {
+      return node.map(getItem);
+    }
+
+    if (isElement(node)) {
+      return node;
+    }
+
+    if (node === undefined || node === null) {
+      return {
+        [objectTypeSymbol]: objectTypeSymbolElement,
+        tag: null,
+        key: undefined,
+        children: []
+      };
+    }
+
+    return {
+      [objectTypeSymbol]: objectTypeSymbolElement,
+      key: undefined,
+      tag: Value,
+      value: node,
+      children: []
     };
   }
 
@@ -2554,46 +2760,32 @@
     }
 
     if (isElement(node)) {
+      if (node.tag === Fragment) {
+        return node.children.map(getItem);
+      }
+
       return [node];
     }
 
-    if (node === undefined || node === null) {
-      return [{
-        [isElementSymbol]: true,
-        tag: null,
-        key: undefined,
-        children: []
-      }];
-    }
-
-    if (!iRender.isNode(node) && node && typeof node === 'object' && render) {
-      node = render(node, context);
-    }
-
-    if (isElement(node)) {
+    if (!node || !render || iRender.isNode(node)) {
       return [node];
     }
 
-    if (node === undefined || node === null) {
-      return [{
-        [isElementSymbol]: true,
-        tag: null,
-        key: undefined,
-        children: []
-      }];
+    if (typeof node !== 'object') {
+      return [node];
     }
 
-    return [{
-      [isElementSymbol]: true,
-      key: undefined,
-      tag: Value,
-      value: node,
-      children: []
-    }];
+    const list = render(node, context);
+
+    if (Array.isArray(list)) {
+      return list;
+    }
+
+    return [list];
   }
 
   function init(nObject, delivered, node, slots, components, native) {
-    return exec$1(nObject, delivered, replaceNode(node, slots, components, native), components);
+    return refresh(() => postpone(() => exec$1(nObject, delivered, replaceNode(node, slots, components, native, true).map(getItem), slots, components, native)));
   }
 
   function normalize(nObject, result) {
@@ -2661,10 +2853,6 @@
       exposed: {
         configurable: true,
         get: () => obj.exposed
-      },
-      delivered: {
-        configurable: true,
-        get: () => obj.delivered
       },
       parent: {
         configurable: true,
@@ -2759,6 +2947,8 @@
 
   class EntityObject {
     constructor(iRender, parent, delivered = (parent === null || parent === void 0 ? void 0 : parent.delivered) || Object.create(null), container) {
+      _defineProperty(this, "slotRenderFnList", new WeakMap());
+
       _defineProperty(this, "events", new EventEmitter());
 
       _defineProperty(this, "emit", this.events.emit);
@@ -3023,15 +3213,50 @@
 
   }
 
+  const disabledKey = new Set([':', '@', '#', '*', '!', '%', '^', '~', '&', '=', '+', '.', '(', ')', '[', ']', '{', '}', '<', '>']);
+
+  function filter(k) {
+    if (typeof k !== 'string') {
+      return true;
+    }
+
+    if (disabledKey.has(k[0])) {
+      return false;
+    }
+
+    if (/^n[:-]/.test(k)) {
+      return false;
+    }
+
+    if (/^on[:-]/.test(k)) {
+      return false;
+    }
+
+    return true;
+  }
+
   function update(nObject, props, children) {
-    updateProps(nObject.props, props, {}, false, true);
+    const propsObj = nObject.props;
+    const newKeys = new Set(Reflect.ownKeys(props).filter(filter));
+
+    for (const k of Reflect.ownKeys(propsObj)) {
+      if (filter(k) && !newKeys.has(k)) {
+        delete propsObj[k];
+      }
+    }
+
+    for (const k of newKeys) {
+      propsObj[k] = props[k];
+    }
+
     nObject.events.updateInProps(props);
     const slots = Object.create(null);
     const {
       native
     } = nObject;
     const childNodes = getSlots(nObject.iRender, children, slots, Boolean(native));
-    setSlots(slots, nObject.slots);
+    setSlots(slots, nObject.slots, nObject.lastSlots);
+    nObject.lastSlots = slots;
 
     if (!native) {
       return;
@@ -3058,10 +3283,6 @@
         return nObject.parent.exposed;
       },
 
-      get delivered() {
-        return nObject.parentDelivered;
-      },
-
       get children() {
         return nObject.children;
       },
@@ -3072,6 +3293,10 @@
 
       get emit() {
         return nObject.emit;
+      },
+
+      delivered(deliver) {
+        return getDelivered(nObject.parentDelivered, deliver);
       },
 
       refresh(f) {
@@ -3132,6 +3357,8 @@
 
       _defineProperty(this, "slots", encase(Object.create(null)));
 
+      _defineProperty(this, "lastSlots", void 0);
+
       _defineProperty(this, "_stopRender", void 0);
 
       _defineProperty(this, "nativeNodes", void 0);
@@ -3161,7 +3388,7 @@
       this.context = context;
       this.callHook('beforeCreate');
       this.childNodes = children;
-      refresh(() => update(this, props, children));
+      refresh(() => postpone(() => update(this, props, children)));
       const {
         render,
         nodes,
@@ -3184,7 +3411,7 @@
       }
 
       this.childNodes = children;
-      refresh(() => update(this, props, children));
+      refresh(() => postpone(() => update(this, props, children)));
     }
 
     _destroy() {
@@ -3231,7 +3458,12 @@
         return;
       }
 
-      this.tree = draw(iRender, convert(this, native));
+      this.tree = draw(iRender, [{
+        tag: Value,
+        key: native,
+        value: native,
+        children: []
+      }]);
       this.shadowTree = draw(iRender, _nodes);
 
       for (const it of getNodes(this.shadowTree)) {
@@ -3271,8 +3503,8 @@
     }
 
     return {
-      [isElementSymbol]: true,
-      tag: 'Neep:Value',
+      [objectTypeSymbol]: objectTypeSymbolElement,
+      tag: Value,
       key: t,
       value: t,
       children: []
@@ -3315,6 +3547,19 @@
       };
     }
 
+    if (isDeliver(tag)) {
+      const newDelivered = Object.create(delivered);
+      Reflect.defineProperty(newDelivered, tag[deliverKeySymbol], {
+        configurable: true,
+        enumerable: true,
+        value: source.props ? source.props.value : undefined
+      });
+      return { ...source,
+        delivered: newDelivered,
+        children: createAll$1(nObject, newDelivered, source.children)
+      };
+    }
+
     if (typeof tag !== 'string') {
       if (tag[typeSymbol] === 'simple') {
         return { ...source,
@@ -3331,7 +3576,7 @@
 
     const ltag = tag.toLowerCase();
 
-    if (ltag === 'neep:container') {
+    if (ltag === Container) {
       var _source$props;
 
       const type = source === null || source === void 0 ? void 0 : (_source$props = source.props) === null || _source$props === void 0 ? void 0 : _source$props.type;
@@ -3342,22 +3587,9 @@
       };
     }
 
-    if (ltag === 'neep:value') {
+    if (ltag === Value) {
       return { ...source,
         children: []
-      };
-    }
-
-    if (ltag === 'neep:deliver') {
-      const props = { ...source.props
-      };
-      delete props.ref;
-      delete props.slot;
-      delete props.key;
-      const newDelivered = updateProps(Object.create(delivered), props, {}, true);
-      return { ...source,
-        delivered: newDelivered,
-        children: createAll$1(nObject, newDelivered, source.children)
       };
     }
 
@@ -3370,6 +3602,24 @@
     return { ...source,
       children: createAll$1(nObject, delivered, source.children)
     };
+  }
+
+  function createAll$1(nObject, delivered, source) {
+    if (!Array.isArray(source)) {
+      source = [source];
+    }
+
+    if (!source.length) {
+      return [];
+    }
+
+    return source.map(item => {
+      if (!Array.isArray(item)) {
+        return createItem$1(nObject, delivered, toElement(item));
+      }
+
+      return [...recursive2iterable(item)].map(it => createItem$1(nObject, delivered, toElement(it)));
+    });
   }
 
   function updateList$1(nObject, delivered, source, tree) {
@@ -3448,6 +3698,19 @@
       };
     }
 
+    if (isDeliver(tag)) {
+      const newDelivered = tree.delivered || Object.create(delivered);
+      Reflect.defineProperty(newDelivered, tag[deliverKeySymbol], {
+        configurable: true,
+        enumerable: true,
+        value: source.props ? source.props.value : undefined
+      });
+      return { ...source,
+        delivered: newDelivered,
+        children: [...updateAll$1(nObject, newDelivered, source.children, tree.children)]
+      };
+    }
+
     if (typeof tag !== 'string') {
       if (tag[typeSymbol] === 'simple') {
         return { ...source,
@@ -3473,8 +3736,8 @@
 
     const ltag = tag.toLowerCase();
 
-    if (ltag === 'neep:container') {
-      var _source$props2;
+    if (ltag === Container) {
+      var _source$props;
 
       const {
         component
@@ -3484,7 +3747,7 @@
         return createItem$1(nObject, delivered, source);
       }
 
-      const type = source === null || source === void 0 ? void 0 : (_source$props2 = source.props) === null || _source$props2 === void 0 ? void 0 : _source$props2.type;
+      const type = source === null || source === void 0 ? void 0 : (_source$props = source.props) === null || _source$props === void 0 ? void 0 : _source$props.type;
       const iRender = type ? getRender(type) : nObject.iRender;
 
       if (iRender !== component.iRender) {
@@ -3498,22 +3761,9 @@
       };
     }
 
-    if (ltag === 'neep:value') {
+    if (ltag === Value) {
       return { ...source,
         children: []
-      };
-    }
-
-    if (ltag === 'neep:deliver') {
-      const props = { ...source.props
-      };
-      delete props.ref;
-      delete props.slot;
-      delete props.key;
-      const newDelivered = updateProps(tree.delivered || Object.create(delivered), props, tree.props, true);
-      return { ...source,
-        delivered: newDelivered,
-        children: [...updateAll$1(nObject, newDelivered, source.children, tree.children)]
       };
     }
 
@@ -3528,31 +3778,13 @@
     };
   }
 
-  function createAll$1(nObject, delivered, source) {
-    if (!Array.isArray(source)) {
-      source = [source];
-    }
-
-    if (!source.length) {
-      return [];
-    }
-
-    return source.map(item => {
-      if (!Array.isArray(item)) {
-        return createItem$1(nObject, delivered, toElement(item));
-      }
-
-      return [...recursive2iterable(item)].map(it => createItem$1(nObject, delivered, toElement(it)));
-    });
-  }
-
   function* updateAll$1(nObject, delivered, source, tree) {
     if (!Array.isArray(source)) {
       source = [source];
     }
 
     let index = 0;
-    let length = Math.min(source.length, source.length);
+    let length = Math.min(source.length || 1, tree.length);
 
     for (; index < length; index++) {
       const src = source[index];
@@ -3566,13 +3798,13 @@
 
     length = Math.max(source.length, source.length);
 
-    if (tree.length > length) {
+    if (tree.length > index) {
       for (; index < length; index++) {
         destroy(tree[index]);
       }
     }
 
-    if (source.length > length) {
+    if (source.length > index) {
       for (; index < length; index++) {
         const src = toElement(source[index]);
 
@@ -3586,11 +3818,13 @@
   }
 
   function convert(nObject, source, tree) {
-    if (!tree) {
-      return createAll$1(nObject, nObject.delivered, source);
-    }
+    return refresh(() => postpone(() => {
+      if (!tree) {
+        return createAll$1(nObject, nObject.delivered, source);
+      }
 
-    return [...updateAll$1(nObject, nObject.delivered, source, tree)];
+      return [...updateAll$1(nObject, nObject.delivered, source, tree)];
+    }));
   }
 
   let awaitDraw = new Set();
@@ -3629,6 +3863,10 @@
       _defineProperty(this, "_drawChildren", false);
 
       _defineProperty(this, "_drawContainer", false);
+
+      _defineProperty(this, "_cancelDrawContainerMonitor", void 0);
+
+      _defineProperty(this, "_cancelDrawChildrenMonitor", void 0);
 
       _defineProperty(this, "_awaitDraw", new Set());
 
@@ -3744,10 +3982,18 @@
       } = this;
       this._drawContainer = false;
 
-      if (drawContainer) {
-        var _this$parent;
+      if (this._cancelDrawContainerMonitor) {
+        this._cancelDrawContainerMonitor();
+      }
 
-        this.iRender.drawContainer(this._container, this._node, this.props, (_this$parent = this.parent) === null || _this$parent === void 0 ? void 0 : _this$parent.iRender);
+      if (drawContainer) {
+        const result = exec(c => c && [this._drawContainer = true, this.requestDraw()], () => {
+          var _this$parent;
+
+          return this.iRender.drawContainer(this._container, this._node, this.props, (_this$parent = this.parent) === null || _this$parent === void 0 ? void 0 : _this$parent.iRender);
+        });
+        [this._container, this._node] = result.result;
+        this._cancelDrawContainerMonitor = result.stop;
       }
 
       if (this.parent && this.parent.iRender !== this.iRender) {
@@ -3756,8 +4002,14 @@
 
       this._drawChildren = false;
 
+      if (this._cancelDrawChildrenMonitor) {
+        this._cancelDrawChildrenMonitor();
+      }
+
       if (drawChildren) {
-        this.content = draw(this.iRender, this._nodes, this.content);
+        const result = exec(c => c && [this._drawChildren = true, this.requestDraw()], () => this.content = draw(this.iRender, this._nodes, this.content));
+        this.content = result.result;
+        this._cancelDrawChildrenMonitor = result.stop;
       }
     }
 
@@ -3791,7 +4043,7 @@
       }
 
       this.callHook('beforeDraw');
-      exec(c => c && this.markDraw(this), () => this._drawSelf());
+      exec(c => c && this.requestDraw(), () => this._drawSelf());
       complete(() => this.callHook('drawn'));
     }
 
@@ -3858,13 +4110,13 @@
         return;
       }
 
+      const list = [...containers];
+      containers.clear();
       this.callHook('beforeDrawAll');
       const refs = [];
       const completeList = [];
       setCompleteList(completeList);
       setRefList(refs);
-      const list = [...containers];
-      containers.clear();
       list.forEach(c => c.drawContainer());
       setRefList();
       refs.forEach(r => r());
@@ -3980,7 +4232,7 @@
   }
 
   /*!
-   * NeepWebRender v0.1.0-alpha.12
+   * NeepHtmlRenderer v0.1.0-alpha.15
    * (c) 2019-2020 Fierflame
    * @license MIT
    */
@@ -4081,7 +4333,45 @@
     return classes;
   }
 
+  const unit = {
+    'width': 'px',
+    'height': 'px',
+    'top': 'px',
+    'right': 'px',
+    'bottom': 'px',
+    'left': 'px',
+    'border': 'px',
+    'border-top': 'px',
+    'border-right': 'px',
+    'border-left': 'px',
+    'border-bottom': 'px',
+    'border-width': 'px',
+    'border-top-width': 'px',
+    'border-right-width': 'px',
+    'border-left-width': 'px',
+    'border-bottom-width': 'px',
+    'border-radius': 'px',
+    'border-top-left-radius': 'px',
+    'border-top-right-radius': 'px',
+    'border-bottom-left-radius': 'px',
+    'border-bottom-right-radius': 'px',
+    'padding': 'px',
+    'padding-top': 'px',
+    'padding-right': 'px',
+    'padding-left': 'px',
+    'padding-bottom': 'px',
+    'margin': 'px',
+    'margin-top': 'px',
+    'margin-right': 'px',
+    'margin-left': 'px',
+    'margin-bottom': 'px'
+  };
+
   function getStyle(style) {
+    if (isValue(style)) {
+      style = style();
+    }
+
     if (typeof style === 'string') {
       return style;
     }
@@ -4098,13 +4388,19 @@
 
     for (let k in style) {
       let value = style[k];
+
+      if (isValue(value)) {
+        value = value();
+      }
+
       const key = k.substr(0, 2) === '--' ? k : k.replace(/[A-Z]/g, '-$1').replace(/-+/g, '-').toLowerCase();
 
       if (typeof value === 'number') {
-        css[key] = [value === 0 ? '0' : `${value}px`, null];
+        const str = value && k in unit ? `${value}${unit[k]}` : `${value}`;
+        css[key] = [str, undefined];
       } else if (value && typeof value === 'string') {
         const v = value.replace(/!important\s*$/, '');
-        css[key] = [v, v === value ? null : 'important'];
+        css[key] = [v, v === value ? undefined : 'important'];
       }
     }
 
@@ -4186,11 +4482,77 @@
       }
     }
 
-    if ((el instanceof HTMLSelectElement || el instanceof HTMLInputElement) && 'value' in attrs) {
+    if ((el instanceof HTMLSelectElement || el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && 'value' in attrs) {
       const value = attrs.value || '';
 
       if (el.value !== value) {
         el.value = value;
+      }
+    }
+
+    if (el instanceof HTMLDetailsElement && 'open' in attrs) {
+      const value = attrs.open !== null;
+
+      if (el.open !== value) {
+        el.open = value;
+      }
+    }
+
+    if (el instanceof HTMLMediaElement) {
+      if ('muted' in attrs) {
+        const value = attrs.muted !== null;
+
+        if (el.muted !== value) {
+          el.muted = value;
+        }
+      }
+
+      if ('paused' in attrs) {
+        const value = attrs.paused !== null;
+
+        if (el.paused !== value) {
+          if (value) {
+            el.pause();
+          } else {
+            el.play();
+          }
+        }
+      }
+
+      if ('currentTime' in attrs) {
+        const value = attrs.currentTime;
+
+        if (value && /^\d+(\.\d+)?$/.test(value)) {
+          const num = Number(value);
+
+          if (el.currentTime !== num) {
+            el.currentTime = num;
+          }
+        }
+      }
+
+      if ('playbackRate' in attrs) {
+        const value = attrs.playbackRate;
+
+        if (value && /^\d+(\.\d+)?$/.test(value)) {
+          const num = Number(value);
+
+          if (el.playbackRate !== num) {
+            el.playbackRate = num;
+          }
+        }
+      }
+
+      if ('volume' in attrs) {
+        const value = attrs.volume;
+
+        if (value && /^\d+(\.\d+)?$/.test(value)) {
+          const num = Number(value);
+
+          if (el.volume !== num) {
+            el.volume = num;
+          }
+        }
       }
     }
   }
@@ -4303,6 +4665,9 @@
     if (el instanceof HTMLInputElement) {
       switch (el.type.toLowerCase()) {
         case 'checkbox':
+          yield ['indeterminate', 'change', e => e.currentTarget.indeterminate];
+          return yield ['checked', 'change', e => e.currentTarget.checked];
+
         case 'radio':
           return yield ['checked', 'change', e => e.currentTarget.checked];
       }
@@ -4310,8 +4675,25 @@
       return yield ['value', 'input', e => e.currentTarget.value];
     }
 
+    if (el instanceof HTMLTextAreaElement) {
+      return yield ['value', 'input', e => e.currentTarget.value];
+    }
+
     if (el instanceof HTMLSelectElement) {
-      return yield ['value', 'select', e => e.currentTarget.value];
+      return yield ['value', 'change', e => e.currentTarget.value];
+    }
+
+    if (el instanceof HTMLDetailsElement) {
+      return yield ['open', 'toggle', e => e.currentTarget.open];
+    }
+
+    if (el instanceof HTMLMediaElement) {
+      yield ['currentTime', 'timeupdate', e => e.currentTarget.currentTime];
+      yield ['playbackRate', 'ratechange', e => e.currentTarget.playbackRate];
+      yield ['volume', 'volumechange', e => e.currentTarget.volume];
+      yield ['muted', 'volumechange', e => e.currentTarget.muted];
+      yield ['paused', 'playing', e => e.currentTarget.paused];
+      return yield ['paused', 'pause', e => e.currentTarget.paused];
     }
   }
 
@@ -4476,14 +4858,27 @@
       style,
       tag
     }, parent) {
+      if (isValue(target)) {
+        target = target.value;
+      }
+
       if (!isTagName(tag)) {
         tag = 'div';
       }
 
-      const container = render$1.createElement(tag, {
+      const container = render$1.createElement(tag);
+      render$1.updateProps(container, {
         class: className,
         style
       });
+
+      if (target === null) {
+        if (!parent) {
+          return [container, container];
+        }
+
+        return [container, parent.createPlaceholder()];
+      }
 
       if (typeof target === 'string') {
         target = document.querySelector(target);
@@ -4526,6 +4921,29 @@
         style
       });
 
+      if (isValue(target)) {
+        console.log(target);
+        target = target.value;
+      }
+
+      const oldTarget = parent === render$1 && container === node ? undefined : render$1.getParent(node);
+
+      if (target === null) {
+        if (oldTarget === null) {
+          return [container, node];
+        }
+
+        if (container !== node) {
+          container.remove();
+        }
+
+        if (!parent) {
+          return [container, container];
+        }
+
+        return [container, parent.createPlaceholder()];
+      }
+
       if (typeof target === 'string') {
         target = document.querySelector(target);
       }
@@ -4533,8 +4951,6 @@
       if (parent !== render$1 && !(target instanceof Element)) {
         target = document.body;
       }
-
-      const oldTarget = parent === render$1 && container === node ? undefined : render$1.getParent(node);
 
       if (oldTarget === target) {
         return [container, node];
@@ -4554,6 +4970,7 @@
           render$1.removeNode(node);
         }
 
+        target.appendChild(container);
         return [container, newNode];
       }
 
@@ -4568,14 +4985,14 @@
         return [container, container];
       }
 
-      target.appendChild(node);
+      target.appendChild(container);
       return [container, node];
     },
 
     drawNode() {},
 
-    createElement(tag, props) {
-      return update$3(createElement$1(tag), props);
+    createElement(tag) {
+      return createElement$1(tag);
     },
 
     createText(text) {
@@ -4667,7 +5084,7 @@
   });
 
   /*!
-   * NeepDevtools v0.1.0-alpha.7
+   * NeepDevtools v0.1.0-alpha.8
    * (c) 2019-2020 Fierflame
    * @license MIT
    */
@@ -4910,7 +5327,7 @@
       key: tagId,
       style: " position: relative; min-height: 20px; font-size: 14px; line-height: 20px; "
     }, createElement("div", {
-      style: " position: absolute; left: -20px; top: 0; width: 20px; height: 20px; text-align: center; cursor: pointer; background: #DDD;; ",
+      style: " position: absolute; left: -20px; top: 0; width: 20px; height: 20px; text-align: center; cursor: pointer; background: #DDD; ",
       onclick: () => keys[tagId] = !opened
     }, opened ? '-' : '+'), createElement("div", null, '<', createElement(Slot, null), getKey(key), '>', !hasChildNodes && createElement("template", null, opened ? createElement("span", null) : createElement("span", {
       onclick: () => keys[tagId] = true,
@@ -5030,7 +5447,7 @@
       }, "container"));
     }
 
-    if (tag === 'neep:deliver') {
+    if (isDeliver(tag)) {
       if (!options.deliver) {
         return yield* getList(children, keys, options, labelList);
       }
@@ -5117,7 +5534,7 @@
     }, [...getList(props.tree, keys, props.options)]);
   };
 
-  function Devtools(props, {}) {
+  function Devtools(props) {
     return createElement("div", null, createElement(Slot, {
       name: "settings"
     }), createElement(Slot, {
@@ -5204,7 +5621,9 @@
       }
 
       const tree = [...getTree(container.content)];
-      app.exposed.$update(createElement(Devtools, null, createElement(Tree, {
+      app.exposed.$update(createElement(Devtools, {
+        options: app.options
+      }, createElement(Tree, {
         slot: "tree",
         tree: tree,
         options: app.options
@@ -5247,9 +5666,22 @@
     return obj;
   }
 
+  let RouterDeliver;
+  function initDelivers() {
+    RouterDeliver = createDeliver();
+  }
+
   function contextConstructor(context) {
-    const router = context.delivered.__NeepRouter__;
-    const depth = context.delivered.__RouteDepth__ || 0;
+    const data = context.delivered(RouterDeliver);
+
+    if (!data) {
+      return;
+    }
+
+    const {
+      router,
+      depth
+    } = data;
     Reflect.defineProperty(context, 'route', {
       value: router,
       enumerable: true,
@@ -5269,7 +5701,8 @@
     delivered
   }) {
     const isNew = props.router instanceof Router;
-    const router = isNew ? props.router : delivered.__NeepRouter__;
+    const deliver = delivered(RouterDeliver);
+    const router = isNew ? props.router : deliver === null || deliver === void 0 ? void 0 : deliver.router;
 
     if (!(router instanceof Router)) {
       return;
@@ -5282,7 +5715,7 @@
         depth = router.size - depth;
       }
     } else {
-      depth = isNew ? 0 : (delivered.__RouteDepth__ || 0) + 1;
+      depth = isNew ? 0 : ((deliver === null || deliver === void 0 ? void 0 : deliver.depth) || 0) + 1;
     }
 
     if (depth < 0) {
@@ -5313,9 +5746,11 @@
     }
 
     label$1(`[path=${match.path}]`, '#987654');
-    return createElement(Deliver, {
-      __RouteDepth__: depth,
-      __NeepRouter__: router
+    return createElement(RouterDeliver, {
+      value: {
+        depth: depth,
+        router: router
+      }
     }, createElement(component, props));
   }
   mSimple(RouterView);
@@ -5392,9 +5827,13 @@
     register('router-link', RouterLink);
   }
 
+  var moduleList = [installComponents, installContextConstructor, initDelivers];
+
   function install$2(Neep) {}
-  installComponents();
-  installContextConstructor();
+
+  for (const f of moduleList) {
+    f();
+  }
 
   function cleanPath(path) {
     path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -6739,7 +7178,10 @@
   }) => {
     var _route$params;
 
-    return createElement(Template, null, createElement("div", null, "\u7528\u6237\u9996\u9875"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']), createElement("hr", null), createElement("div", null, createElement(Router.Link, {
+    const v = useValue(() => Math.random());
+    const s = useValue(() => value(0));
+    s.value++;
+    return createElement(Template, null, s.value, ": ", v, createElement("div", null, "\u7528\u6237\u9996\u9875"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']), createElement("hr", null), createElement("div", null, createElement(Router.Link, {
       path: "/"
     }, "\u9996\u9875")), createElement("div", null, createElement(Router.Link, {
       path: "/users/1"
@@ -6759,7 +7201,7 @@
     var _route$params;
 
     const v = useValue(() => Math.random());
-    return createElement(Template, null, createElement("div", null, "\u7528\u6237\u4FE1\u606F"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']));
+    return createElement(Template, null, v, createElement("div", null, "\u7528\u6237\u4FE1\u606F"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']));
   });
   var Info$1 = mark(Info, mName('UserInfo'));
 

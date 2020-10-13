@@ -1,11 +1,15 @@
-import { create, mark, mName, createElement, Template } from '@neep/core';
+import { create, mark, mName, createElement, Template, useValue, value } from '@neep/core';
 import Router from '@neep/router';
 
 const User = create((
 	props: { a?: any,  set?: () => void},
 	{ route },
 ) => {
+	const v = useValue(() => Math.random());
+	const s = useValue(() => value(0));
+	s.value++;
 	return <Template>
+	{s.value}: {v}
 		<div>用户首页</div>
 		<div>Id: {route?.params?.['id']}</div>
 		<hr />

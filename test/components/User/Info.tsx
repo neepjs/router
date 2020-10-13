@@ -6,6 +6,7 @@ const Info = create((
 ) => {
 	const v = useValue(() => Math.random());
 	return <Template>
+		{v}
 		<div>用户信息</div>
 		<div>Id: {route?.params?.['id']}</div>
 	</Template>;
