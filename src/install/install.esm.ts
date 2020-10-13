@@ -1,9 +1,9 @@
 import installNeep from './neep.esm';
-import installContextConstructor from './installContextConstructor';
-import installComponents from './installComponents';
+import moduleList from './moduleList';
 
 export default function install(Neep: typeof import ('@neep/core')) {
 	installNeep(Neep);
-	installComponents();
-	installContextConstructor();
+	for (const f of moduleList) {
+		f();
+	}
 }

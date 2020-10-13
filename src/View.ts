@@ -1,6 +1,7 @@
 import { Context, mName, mSimple } from '@neep/core';
-import { createElement, Deliver, label } from './install';
+import { createElement, label } from './install';
 import Router from './Router';
+import { RouterDeliver } from './install/initDelivers';
 
 export interface ViewProps {
 	name?: string;
@@ -12,13 +13,15 @@ export default function RouterView(
 	{ delivered }: Context,
 ) {
 	const isNew = props.router instanceof Router;
-	const router = isNew ? props.router : delivered.__NeepRouter__;
+	const deliver = delivered(RouterDeliver) as RouterDeliver | undefined;
+	const router = isNew ? props.router : deliver?.router;
 	if (!(router instanceof Router)) { return; }
+
 	let depth = props.depth;
 	if (typeof depth === 'number' && Number.isInteger(depth)) {
 		if (depth < 0) { depth = router.size - depth; }
 	} else {
-		depth = isNew ? 0 : (delivered.__RouteDepth__ || 0) + 1;
+		depth = isNew ? 0 : (deliver?.depth || 0) + 1;
 	}
 	if (depth < 0) { return null; }
 	const match = router._get(depth);
@@ -29,10 +32,10 @@ export default function RouterView(
 	const component = name in components ? components[name] : undefined;
 	if (!component) { return null; }
 	label(`[path=${match.path}]`, '#987654');
-	return createElement(Deliver, {
-		__RouteDepth__: depth,
-		__NeepRouter__: router,
-	}, createElement(component, props));
+	return createElement(RouterDeliver, { value: {
+		depth: depth,
+		router: router,
+	}}, createElement(component, props));
 }
 mSimple(RouterView);
 mName('RouterView', RouterView);

@@ -1,9 +1,11 @@
 import { Context } from '@neep/core';
 import { addContextConstructor } from './neep';
+import { RouterDeliver } from './initDelivers';
 
 export function contextConstructor(context: Context) {
-	const router = context.delivered.__NeepRouter__;
-	const depth = context.delivered.__RouteDepth__ || 0;
+	const data = context.delivered(RouterDeliver);
+	if (!data) { return; }
+	const {router, depth} = data;
 	Reflect.defineProperty(context, 'route', {
 		value: router,
 		enumerable: true,

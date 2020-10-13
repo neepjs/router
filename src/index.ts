@@ -1,3 +1,7 @@
 import './neep.d.ts';
 export * from './type';
 export { default } from './Router';
+export * as history from './history';
+export { default as install } from './install';
+export { default as RouterView } from './View';
+export { default as RouterLink } from './Link';

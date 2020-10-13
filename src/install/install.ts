@@ -1,7 +1,7 @@
-import installContextConstructor from './installContextConstructor';
-import installComponents from './installComponents';
+import moduleList from './moduleList';
 
 export default function install(Neep: typeof import ('@neep/core')) {
 }
-installComponents();
-installContextConstructor();
+for (const f of moduleList) {
+	f();
+}
