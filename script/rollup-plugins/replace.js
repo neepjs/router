@@ -1,5 +1,5 @@
 
-import replace from 'rollup-plugin-replace';
+import replace from '@rollup/plugin-replace';
 import fsFn from 'fs';
 const {
 	version,

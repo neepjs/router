@@ -42,7 +42,7 @@ const createOutput = (format, prod) => ({
 	globals: {
 		'@neep/core': 'Neep',
 	},
-	exports: 'default',
+	exports: 'named',
 });
 
 const external = ['@neep/core'];
