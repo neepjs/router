@@ -1,9 +1,9 @@
 /*!
- * NeepRouter v0.1.0-alpha.3
+ * NeepRouter v0.1.0-alpha.4
  * (c) 2020 Fierflame
  * @license MIT
  */
-import { addContextConstructor, mSimple, mName, label, createElement, Deliver, register, value, encase, Error } from '@neep/core';
+import { createDeliver, addContextConstructor, label, createElement, mSimple, mName, register, value, encase, Error } from '@neep/core';
 
 function _defineProperty(obj, key, value) {
   if (key in obj) {
@@ -20,9 +20,22 @@ function _defineProperty(obj, key, value) {
   return obj;
 }
 
+let RouterDeliver;
+function initDelivers() {
+  RouterDeliver = createDeliver();
+}
+
 function contextConstructor(context) {
-  const router = context.delivered.__NeepRouter__;
-  const depth = context.delivered.__RouteDepth__ || 0;
+  const data = context.delivered(RouterDeliver);
+
+  if (!data) {
+    return;
+  }
+
+  const {
+    router,
+    depth
+  } = data;
   Reflect.defineProperty(context, 'route', {
     value: router,
     enumerable: true,
@@ -42,7 +55,8 @@ function RouterView(props, {
   delivered
 }) {
   const isNew = props.router instanceof Router;
-  const router = isNew ? props.router : delivered.__NeepRouter__;
+  const deliver = delivered(RouterDeliver);
+  const router = isNew ? props.router : deliver === null || deliver === void 0 ? void 0 : deliver.router;
 
   if (!(router instanceof Router)) {
     return;
@@ -55,7 +69,7 @@ function RouterView(props, {
       depth = router.size - depth;
     }
   } else {
-    depth = isNew ? 0 : (delivered.__RouteDepth__ || 0) + 1;
+    depth = isNew ? 0 : ((deliver === null || deliver === void 0 ? void 0 : deliver.depth) || 0) + 1;
   }
 
   if (depth < 0) {
@@ -86,9 +100,11 @@ function RouterView(props, {
   }
 
   label(`[path=${match.path}]`, '#987654');
-  return createElement(Deliver, {
-    __RouteDepth__: depth,
-    __NeepRouter__: router
+  return createElement(RouterDeliver, {
+    value: {
+      depth: depth,
+      router: router
+    }
   }, createElement(component, props));
 }
 mSimple(RouterView);
@@ -165,9 +181,13 @@ function installComponents() {
   register('router-link', RouterLink);
 }
 
+var moduleList = [installComponents, installContextConstructor, initDelivers];
+
 function install(Neep) {}
-installComponents();
-installContextConstructor();
+
+for (const f of moduleList) {
+  f();
+}
 
 function cleanPath(path) {
   path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -580,20 +600,21 @@ function flags(options) {
 
 
 function regexpToRegexp(path, keys) {
-  if (!keys) return path; // Use a negative lookahead to match only capturing groups.
+  if (!keys) return path;
+  var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+  var index = 0;
+  var execResult = groupsRegex.exec(path.source);
 
-  var groups = path.source.match(/\((?!\?)/g);
-
-  if (groups) {
-    for (var i = 0; i < groups.length; i++) {
-      keys.push({
-        name: i,
-        prefix: "",
-        suffix: "",
-        modifier: "",
-        pattern: ""
-      });
-    }
+  while (execResult) {
+    keys.push({
+      // Use parenthesized substring match if available, index otherwise
+      name: execResult[1] || index++,
+      prefix: "",
+      suffix: "",
+      modifier: "",
+      pattern: ""
+    });
+    execResult = groupsRegex.exec(path.source);
   }
 
   return path;
@@ -1508,3 +1529,4 @@ class Router {
 }
 
 export default Router;
+export { RouterLink, RouterView, history$1 as history, install };

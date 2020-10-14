@@ -1,13 +1,13 @@
 /*!
- * NeepRouter v0.1.0-alpha.3
+ * NeepRouter v0.1.0-alpha.4
  * (c) 2020 Fierflame
  * @license MIT
  */
 (function (global, factory) {
-	typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('@neep/core')) :
-	typeof define === 'function' && define.amd ? define(['@neep/core'], factory) :
-	(global = global || self, global.NeepRouter = factory(global.Neep));
-}(this, (function (core) { 'use strict';
+	typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('@neep/core')) :
+	typeof define === 'function' && define.amd ? define(['exports', '@neep/core'], factory) :
+	(global = global || self, factory(global.NeepRouter = {}, global.Neep));
+}(this, (function (exports, core) { 'use strict';
 
 	function _defineProperty(obj, key, value) {
 	  if (key in obj) {
@@ -24,9 +24,22 @@
 	  return obj;
 	}
 
+	let RouterDeliver;
+	function initDelivers() {
+	  RouterDeliver = core.createDeliver();
+	}
+
 	function contextConstructor(context) {
-	  const router = context.delivered.__NeepRouter__;
-	  const depth = context.delivered.__RouteDepth__ || 0;
+	  const data = context.delivered(RouterDeliver);
+
+	  if (!data) {
+	    return;
+	  }
+
+	  const {
+	    router,
+	    depth
+	  } = data;
 	  Reflect.defineProperty(context, 'route', {
 	    value: router,
 	    enumerable: true,
@@ -46,7 +59,8 @@
 	  delivered
 	}) {
 	  const isNew = props.router instanceof Router;
-	  const router = isNew ? props.router : delivered.__NeepRouter__;
+	  const deliver = delivered(RouterDeliver);
+	  const router = isNew ? props.router : deliver === null || deliver === void 0 ? void 0 : deliver.router;
 
 	  if (!(router instanceof Router)) {
 	    return;
@@ -59,7 +73,7 @@
 	      depth = router.size - depth;
 	    }
 	  } else {
-	    depth = isNew ? 0 : (delivered.__RouteDepth__ || 0) + 1;
+	    depth = isNew ? 0 : ((deliver === null || deliver === void 0 ? void 0 : deliver.depth) || 0) + 1;
 	  }
 
 	  if (depth < 0) {
@@ -90,9 +104,11 @@
 	  }
 
 	  core.label(`[path=${match.path}]`, '#987654');
-	  return core.createElement(core.Deliver, {
-	    __RouteDepth__: depth,
-	    __NeepRouter__: router
+	  return core.createElement(RouterDeliver, {
+	    value: {
+	      depth: depth,
+	      router: router
+	    }
 	  }, core.createElement(component, props));
 	}
 	core.mSimple(RouterView);
@@ -169,9 +185,13 @@
 	  core.register('router-link', RouterLink);
 	}
 
+	var moduleList = [installComponents, installContextConstructor, initDelivers];
+
 	function install(Neep) {}
-	installComponents();
-	installContextConstructor();
+
+	for (const f of moduleList) {
+	  f();
+	}
 
 	function cleanPath(path) {
 	  path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -584,20 +604,21 @@
 
 
 	function regexpToRegexp(path, keys) {
-	  if (!keys) return path; // Use a negative lookahead to match only capturing groups.
+	  if (!keys) return path;
+	  var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+	  var index = 0;
+	  var execResult = groupsRegex.exec(path.source);
 
-	  var groups = path.source.match(/\((?!\?)/g);
-
-	  if (groups) {
-	    for (var i = 0; i < groups.length; i++) {
-	      keys.push({
-	        name: i,
-	        prefix: "",
-	        suffix: "",
-	        modifier: "",
-	        pattern: ""
-	      });
-	    }
+	  while (execResult) {
+	    keys.push({
+	      // Use parenthesized substring match if available, index otherwise
+	      name: execResult[1] || index++,
+	      prefix: "",
+	      suffix: "",
+	      modifier: "",
+	      pattern: ""
+	    });
+	    execResult = groupsRegex.exec(path.source);
 	  }
 
 	  return path;
@@ -1511,6 +1532,12 @@
 
 	}
 
-	return Router;
+	exports.RouterLink = RouterLink;
+	exports.RouterView = RouterView;
+	exports.default = Router;
+	exports.history = history$1;
+	exports.install = install;
+
+	Object.defineProperty(exports, '__esModule', { value: true });
 
 })));

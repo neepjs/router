@@ -1,5 +1,5 @@
 /*!
- * NeepRouter v0.1.0-alpha.3
+ * NeepRouter v0.1.0-alpha.4
  * (c) 2020 Fierflame
  * @license MIT
  */
@@ -183,10 +183,6 @@ declare module '@neep/core' {
 		readonly route?: Router;
 		readonly match?: Match;
 	}
-	interface Delivered {
-		readonly __NeepRouter__?: Router;
-		readonly __RouteDepth__?: number;
-	}
 }
 
 declare global {
@@ -201,4 +197,4 @@ declare global {
 }
 
 export default Router;
-export { History, IHistory, Location, Match, Route, RouteConfig };
+export { History, IHistory, Location, Match, StoreHistory as Memory, Route, RouteConfig, RouterLink, RouterView, WebPathHistory$1 as WebHash, WebPathHistory as WebPath, install };
