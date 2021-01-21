@@ -1,7 +1,7 @@
-import { IHistory, Location } from '../type';
+import Neep from '@neep/core';
+import { IHistory, IHistoryLinkProps } from '../type';
 import Router from '../Router';
-import { Context } from '@neep/core';
-import { createElement } from '../install';
+import { createElementBase } from '../install/neep';
 
 function parse(p: string): [string, string, string] {
 	const result = /^([^?#]*)((?:\?[^#]*)?)((?:#.*)?)$/.exec(p);
@@ -48,19 +48,15 @@ export default class WebPathHistory implements IHistory {
 		return this.go(1);
 	}
 	link(
-		{ to, onclick, id, class: className, style }: { to: Location; [any: string]: any },
-		{ childNodes, emit }: Context,
+		{ to, ...props }: IHistoryLinkProps,
+		{ childNodes, emit }: Neep.ShellContext<any>,
 		onClick: ()=> void,
 	) {
-		return createElement('a', {
-			id, class: className, style,
+		return createElementBase('a', {
+			...props,
 			href: `#${this.router.getUrl(to)}`,
-			'n-on': emit.omit('click'),
-			'@click': (e: MouseEvent) => {
+			'on:click': (e: MouseEvent) => {
 				let cancel = !emit('click', e);
-				if (typeof onclick === 'function') {
-					onclick(e);
-				}
 				if (e.defaultPrevented) { return; }
 				e.preventDefault();
 				if (cancel) { return; }

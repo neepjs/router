@@ -1,13 +1,7 @@
-
-import { Match } from './type';
-import Router from './Router';
-import { ViewProps } from './View';
-import { LinkProps } from './Link';
-
+import { LinkProps, RouteContext, ViewProps } from './type';
 declare module '@neep/core' {
 	interface Context {
-		readonly route?: Router;
-		readonly match?: Match;
+		readonly route?: RouteContext;
 	}
 }
 

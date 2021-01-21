@@ -1,6 +1,6 @@
-import install from './install';
-import { Error, value, encase } from './install/neep';
-import { Value } from 'monitorable';
+import Neep from '@neep/core';
+import install from './install/neep';
+import { Error, value } from './install/neep';
 import RouterView from './View';
 import RouterLink from './Link';
 import { Route, Location, IHistory, Match, RouteConfig } from './type';
@@ -8,7 +8,7 @@ import { cleanPath } from './util';
 import { addRoute, matchRoutes } from './route';
 import { stringify, parse } from './query';
 import * as history from './history';
-import { Component, mName, mSimple } from '@neep/core';
+import { createShellComponent } from './install/neep';
 
 function get(
 	location: Location | string,
@@ -46,21 +46,6 @@ function get(
 	return { path, search, hash };
 }
 
-function update(
-	obj: any,
-	props: any = {},
-) {
-	const newKeys = new Set(Reflect.ownKeys(props));
-	for (const k of Reflect.ownKeys(obj)) {
-		if (!newKeys.has(k)) {
-			delete obj[k];
-		}
-	}
-	for (const k of newKeys) {
-		obj[k] = props[k];
-	}
-	return obj;
-}
 const redirects: string[] = [];
 class Router {
 	static get history() { return history; }
@@ -73,13 +58,16 @@ class Router {
 	private _routes: Route[] = [];
 	history?: IHistory;
 	private readonly _size = value(0);
-	private readonly _nodes: Value<Match | undefined>[] = [];
+	private readonly _nodes: Neep.Value<Match | undefined>[] = [];
 	private readonly _matches = value<Match[]>([]);
 	private readonly _hash = value('');
 	private readonly _search = value('');
 	private readonly _alias = value('');
 	private readonly _path = value('/');
 	private readonly _state = value(undefined as any);
+	private readonly _params = value({} as Record<string, string>);
+	private readonly _query = value({} as Record<string, any>);
+	private readonly _meta = value({} as Record<string, any>);
 	get size() { return this._size(); }
 	get matches() { return this._matches(); }
 	get alias() { return this._alias(); }
@@ -87,9 +75,9 @@ class Router {
 	get search() { return this._search(); }
 	get hash() { return this._hash(); }
 	get state() { return this._state(); }
-	readonly params: Record<string, string> = encase(Object.create(null));
-	readonly query: Record<string, any> = encase(Object.create(null));
-	readonly meta: Record<string, any> = encase(Object.create(null));
+	get params() { return this._params(); }
+	get query() { return this._query(); }
+	get meta() { return this._meta(); }
 	constructor({History, historyOption}: {
 		History?: {new(router: Router, opt?: any): IHistory }
 		historyOption?: any;
@@ -164,12 +152,12 @@ class Router {
 			this._matches(matches);
 			this._path(path);
 			this._alias(last?.route?.alias || '');
-			update(this.params, last?.params || {});
-			update(this.meta, last?.route?.meta || {});
+			this._params(last?.params || {} as any);
+			this._meta(Object.assign({}, ...matches.map(m => m.route.meta)));
 		}
 		if (this._search() !== search) {
 			this._search(search);
-			update(this.query, (this.parse || parse)(search.substr(1)));
+			this._query((this.parse || parse)(search.substr(1)));
 		}
 		this._hash(hash);
 		this._state(state);
@@ -220,10 +208,10 @@ class Router {
 		this._update(...it);
 	}
 	get view() {
-		const view: Component = (props, ...p) =>
-			RouterView({...props, router: this}, ...p);
-		mName('Router', view);
-		mSimple(view);
+		const view = createShellComponent((props, ...p) =>
+			RouterView({...props, router: this}, ...p), {
+				name: 'Router',
+			});
 		Reflect.defineProperty(this, 'view', {
 			value: view,
 			enumerable: true,

@@ -1,13 +1,13 @@
-import { Deliver } from '@neep/core';
-import { createDeliver } from './neep';
+import Neep from '@neep/core';
+import { createDeliverComponent } from './neep';
 import Router from '../Router';
 
 export interface RouterDeliver {
 	router: Router;
 	depth: number;
 }
-export let RouterDeliver: Deliver<RouterDeliver | undefined>;
+export let RouterDeliver: Neep.DeliverComponent<RouterDeliver | undefined>;
 
 export default function initDelivers() {
-	RouterDeliver = createDeliver<RouterDeliver>();
+	RouterDeliver = createDeliverComponent<RouterDeliver>();
 }

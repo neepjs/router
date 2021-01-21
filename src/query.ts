@@ -1,3 +1,4 @@
+import { isValue } from './install/neep';
 
 function getValue(v: any): string | undefined | null {
 	if (v === undefined) { return undefined; }
@@ -10,7 +11,8 @@ function getValue(v: any): string | undefined | null {
 export function stringify(s: any): string {
 	const list: string[] = [];
 	for (const key of Object.keys(s)) {
-		const value = s[key];
+		const item = s[key];
+		const value = isValue(item) ? item() : item;
 		const k = encodeURIComponent(key);
 		if (!Array.isArray(value)) {
 			const v = getValue(value);

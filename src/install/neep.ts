@@ -1,14 +1,15 @@
 export {
 	value,
-	encase,
+	isValue,
 	register,
 	Error,
 	label,
-	createElement,
-	createDeliver,
+	createElementBase,
+	createShellComponent,
+	createDeliverComponent,
 	addContextConstructor,
 } from '@neep/core';
 
 
-export default function installNeep(Neep: typeof import ('@neep/core')) {
+export default function installNeep(Neep: typeof import ('@neep/core').default) {
 }

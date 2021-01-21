@@ -1,7 +1,7 @@
-import { IHistory } from '../type';
+import Neep from '@neep/core';
+import { IHistory, IHistoryLinkProps } from '../type';
 import Router from '../Router';
-import { Context } from '@neep/core';
-import { createElement } from '../install';
+import { createElementBase } from '../install/neep';
 
 export default class StoreHistory implements IHistory {
 	router: Router;
@@ -43,15 +43,14 @@ export default class StoreHistory implements IHistory {
 		return this.go(1);
 	}
 	link(
-		{ id, class: className, style }: any,
-		{ childNodes, emit }: Context,
+		props: IHistoryLinkProps,
+		{ childNodes, emit }: Neep.ShellContext<any>,
 		onClick: ()=> void,
 	) {
-		return createElement('span', {
-			id, class: className, style,
-			'n-on': emit.omit('click'),
-			'@click': (...any: any) => {
-				if (!emit('click', ...any)) { return; }
+		return createElementBase('span', {
+			...props,
+			'on:click': (v: any) => {
+				if (!emit('click', v)) { return; }
 				onClick();
 			},
 		}, ...childNodes);

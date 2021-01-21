@@ -1,41 +1,60 @@
-import { Context, mName, mSimple } from '@neep/core';
-import { createElement, label } from './install';
+import Neep from '@neep/core';
+import { createShellComponent, createElementBase, label } from './install/neep';
 import Router from './Router';
 import { RouterDeliver } from './install/initDelivers';
+import { ViewProps } from './type';
 
-export interface ViewProps {
-	name?: string;
-	depth?: number;
-	router?: Router;
-}
-export default function RouterView(
-	props: ViewProps,
-	{ delivered }: Context,
+
+function getDepth(
+	router: Router,
+	def: number,
+	depthProp: number | undefined,
 ) {
-	const isNew = props.router instanceof Router;
-	const deliver = delivered(RouterDeliver) as RouterDeliver | undefined;
-	const router = isNew ? props.router : deliver?.router;
-	if (!(router instanceof Router)) { return; }
-
-	let depth = props.depth;
-	if (typeof depth === 'number' && Number.isInteger(depth)) {
-		if (depth < 0) { depth = router.size - depth; }
-	} else {
-		depth = isNew ? 0 : (deliver?.depth || 0) + 1;
+	if (typeof depthProp === 'number' && Number.isInteger(depthProp)) {
+		if (depthProp < 0) {
+			return router.size + depthProp;
+		}
+		return depthProp;
 	}
-	if (depth < 0) { return null; }
-	const match = router._get(depth);
-	if (!match) { return; }
-	const { route: { components } } = match;
-	if (!components) { return null; }
-	const name = props.name || 'default';
-	const component = name in components ? components[name] : undefined;
-	if (!component) { return null; }
-	label(`[path=${match.path}]`, '#987654');
-	return createElement(RouterDeliver, { value: {
-		depth: depth,
-		router: router,
-	}}, createElement(component, props));
+	return def;
 }
-mSimple(RouterView);
-mName('RouterView', RouterView);
+function get(props: ViewProps, { delivered }: Neep.ShellContext<any>): RouterDeliver | null {
+	if (props.router instanceof Router) {
+		const router = props.router;
+		if (!(router instanceof Router)) { return null; }
+		let depth = getDepth(router, 0, props.depth);
+		if (depth < 0) { return null; }
+		return { router, depth};
+	}
+	const routerDeliver = delivered(RouterDeliver);
+	if (!routerDeliver) { return null; }
+	const router = routerDeliver.router;
+	let depth = getDepth(router, routerDeliver.depth + 1, props.depth);
+	if (depth < 0) { return null; }
+	return { router, depth };
+
+}
+export default createShellComponent<ViewProps, any>(function RouterView(
+	props,
+	context,
+) {
+	const info = get(props, context);
+	if (!info) { return null; }
+	const {router} = info;
+	let {depth} = info;
+
+	const name = props.name || 'default';
+	for(let match = router._get(depth); match; match = router._get(++depth)) {
+		const { components } = match.route;
+		if (!components) { continue; }
+		const component = name in components ? components[name] : undefined;
+		if (!component) { continue; }
+		label({text: `{path=${match.path}}[${name}]`, color: '#987654'});
+		return createElementBase(
+			RouterDeliver,
+			{ value: { depth, router }},
+			createElementBase(component, props),
+		);
+	}
+	return context.childNodes as any;
+}, { name: 'RouterView'});
