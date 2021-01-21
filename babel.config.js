@@ -13,11 +13,12 @@ module.exports = {
 		'@babel/plugin-proposal-throw-expressions',
 		['@babel/plugin-transform-typescript', {
 			isTSX: true,
-			jsxPragma: 'createElement',
+			jsxPragma: 'Neep',
 			allowNamespaces: true,
 		}],
 		['@babel/plugin-transform-react-jsx', {
-			pragma: 'createElement',
+			pragma: 'Neep.createElement',
+			pragmaFrag: 'Neep.Fragment',
 			throwIfNamespace: false,
 		}],
 	],

@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "jsx": "react",
-    "jsxFactory": "createElement",
+    "jsxFactory": "Neep.createElement",
     "outDir": "./types/",
     "module": "commonjs",
     "target": "esnext",
