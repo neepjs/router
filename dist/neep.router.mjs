@@ -1,9 +1,9 @@
 /*!
- * NeepRouter v0.1.0-alpha.4
- * (c) 2020 Fierflame
+ * NeepRouter v0.1.0-alpha.5
+ * (c) 2020-2021 Fierflame
  * @license MIT
  */
-import { createDeliver, addContextConstructor, label, createElement, mSimple, mName, register, value, encase, Error } from '@neep/core';
+import { createDeliverComponent, createShellComponent, label, createElementBase, isValue, value, Error, addContextConstructor, register } from '@neep/core';
 
 function _defineProperty(obj, key, value) {
   if (key in obj) {
@@ -20,98 +20,115 @@ function _defineProperty(obj, key, value) {
   return obj;
 }
 
+function installNeep(Neep) {}
+
 let RouterDeliver;
 function initDelivers() {
-  RouterDeliver = createDeliver();
+  RouterDeliver = createDeliverComponent();
 }
 
-function contextConstructor(context) {
-  const data = context.delivered(RouterDeliver);
+function getDepth(router, def, depthProp) {
+  if (typeof depthProp === 'number' && Number.isInteger(depthProp)) {
+    if (depthProp < 0) {
+      return router.size + depthProp;
+    }
 
-  if (!data) {
-    return;
+    return depthProp;
   }
 
-  const {
-    router,
-    depth
-  } = data;
-  Reflect.defineProperty(context, 'route', {
-    value: router,
-    enumerable: true,
-    configurable: true
-  });
-  Reflect.defineProperty(context, 'match', {
-    get: () => router === null || router === void 0 ? void 0 : router._get(depth),
-    enumerable: true,
-    configurable: true
-  });
-}
-function installContextConstructor() {
-  addContextConstructor(contextConstructor);
+  return def;
 }
 
-function RouterView(props, {
+function get(props, {
   delivered
 }) {
-  const isNew = props.router instanceof Router;
-  const deliver = delivered(RouterDeliver);
-  const router = isNew ? props.router : deliver === null || deliver === void 0 ? void 0 : deliver.router;
+  if (props.router instanceof Router) {
+    const router = props.router;
 
-  if (!(router instanceof Router)) {
-    return;
-  }
-
-  let depth = props.depth;
-
-  if (typeof depth === 'number' && Number.isInteger(depth)) {
-    if (depth < 0) {
-      depth = router.size - depth;
+    if (!(router instanceof Router)) {
+      return null;
     }
-  } else {
-    depth = isNew ? 0 : ((deliver === null || deliver === void 0 ? void 0 : deliver.depth) || 0) + 1;
+
+    let depth = getDepth(router, 0, props.depth);
+
+    if (depth < 0) {
+      return null;
+    }
+
+    return {
+      router,
+      depth
+    };
   }
+
+  const routerDeliver = delivered(RouterDeliver);
+
+  if (!routerDeliver) {
+    return null;
+  }
+
+  const router = routerDeliver.router;
+  let depth = getDepth(router, routerDeliver.depth + 1, props.depth);
 
   if (depth < 0) {
     return null;
   }
 
-  const match = router._get(depth);
+  return {
+    router,
+    depth
+  };
+}
 
-  if (!match) {
-    return;
+var RouterView = createShellComponent(function RouterView(props, context) {
+  const info = get(props, context);
+
+  if (!info) {
+    return null;
   }
 
   const {
-    route: {
-      components
-    }
-  } = match;
-
-  if (!components) {
-    return null;
-  }
-
+    router
+  } = info;
+  let {
+    depth
+  } = info;
   const name = props.name || 'default';
-  const component = name in components ? components[name] : undefined;
 
-  if (!component) {
-    return null;
+  for (let match = router._get(depth); match; match = router._get(++depth)) {
+    const {
+      components
+    } = match.route;
+
+    if (!components) {
+      continue;
+    }
+
+    const component = name in components ? components[name] : undefined;
+
+    if (!component) {
+      continue;
+    }
+
+    label({
+      text: `{path=${match.path}}[${name}]`,
+      color: '#987654'
+    });
+    return createElementBase(RouterDeliver, {
+      value: {
+        depth,
+        router
+      }
+    }, createElementBase(component, props));
   }
 
-  label(`[path=${match.path}]`, '#987654');
-  return createElement(RouterDeliver, {
-    value: {
-      depth: depth,
-      router: router
-    }
-  }, createElement(component, props));
-}
-mSimple(RouterView);
-mName('RouterView', RouterView);
+  return context.childNodes;
+}, {
+  name: 'RouterView'
+});
 
-function RouterLink(props, context) {
-  var _route$history;
+var RouterLink = createShellComponent(function RouterLink(props, context) {
+  var _route$router$history;
 
   const {
     route,
@@ -119,7 +136,7 @@ function RouterLink(props, context) {
   } = context;
 
   if (!route) {
-    return createElement('template', {}, ...childNodes);
+    return createElementBase('template', {}, ...childNodes);
   }
 
   let {
@@ -165,29 +182,14 @@ function RouterLink(props, context) {
     }
   }
 
-  return ((_route$history = route.history) === null || _route$history === void 0 ? void 0 : _route$history.link({ ...props,
+  return ((_route$router$history = route.router.history) === null || _route$router$history === void 0 ? void 0 : _route$router$history.link({ ...props,
     to
-  }, context, onclick)) || createElement('span', {
-    '@click': onclick
+  }, context, onclick)) || createElementBase('span', {
+    'on:click': onclick
   }, ...childNodes);
-}
-mSimple(RouterLink);
-mName('RouterLink', RouterLink);
-
-function installComponents() {
-  register('RouterView', RouterView);
-  register('router-view', RouterView);
-  register('RouterLink', RouterLink);
-  register('router-link', RouterLink);
-}
-
-var moduleList = [installComponents, installContextConstructor, initDelivers];
-
-function install(Neep) {}
-
-for (const f of moduleList) {
-  f();
-}
+}, {
+  name: 'RouterLink'
+});
 
 function cleanPath(path) {
   path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -829,7 +831,8 @@ function stringify(s) {
   const list = [];
 
   for (const key of Object.keys(s)) {
-    const value = s[key];
+    const item = s[key];
+    const value = isValue(item) ? item() : item;
     const k = encodeURIComponent(key);
 
     if (!Array.isArray(value)) {
@@ -938,21 +941,13 @@ class StoreHistory {
     return this.go(1);
   }
 
-  link({
-    id,
-    class: className,
-    style
-  }, {
+  link(props, {
     childNodes,
     emit
   }, onClick) {
-    return createElement('span', {
-      id,
-      class: className,
-      style,
-      'n-on': emit.omit('click'),
-      '@click': (...any) => {
-        if (!emit('click', ...any)) {
+    return createElementBase('span', { ...props,
+      'on:click': v => {
+        if (!emit('click', v)) {
           return;
         }
 
@@ -1045,26 +1040,15 @@ class WebPathHistory {
 
   link({
     to,
-    onclick,
-    id,
-    class: className,
-    style
+    ...props
   }, {
     childNodes,
     emit
   }, onClick) {
-    return createElement('a', {
-      id,
-      class: className,
-      style,
+    return createElementBase('a', { ...props,
       href: `${this.base}${this.router.getUrl(to)}`,
-      'n-on': emit.omit('click'),
-      '@click': e => {
+      'on:click': e => {
         let cancel = !emit('click', e);
-
-        if (typeof onclick === 'function') {
-          onclick(e);
-        }
 
         if (e.defaultPrevented) {
           return;
@@ -1152,26 +1136,15 @@ class WebPathHistory$1 {
 
   link({
     to,
-    onclick,
-    id,
-    class: className,
-    style
+    ...props
   }, {
     childNodes,
     emit
   }, onClick) {
-    return createElement('a', {
-      id,
-      class: className,
-      style,
+    return createElementBase('a', { ...props,
       href: `#${this.router.getUrl(to)}`,
-      'n-on': emit.omit('click'),
-      '@click': e => {
+      'on:click': e => {
         let cancel = !emit('click', e);
-
-        if (typeof onclick === 'function') {
-          onclick(e);
-        }
 
         if (e.defaultPrevented) {
           return;
@@ -1199,7 +1172,7 @@ var history$1 = /*#__PURE__*/Object.freeze({
 	WebHash: WebPathHistory$1
 });
 
-function get(location, routes, basePath, stringifyQuery = stringify) {
+function get$1(location, routes, basePath, stringifyQuery = stringify) {
   if (typeof location === 'string') {
     location = {
       path: location
@@ -1238,22 +1211,6 @@ function get(location, routes, basePath, stringifyQuery = stringify) {
   };
 }
 
-function update(obj, props = {}) {
-  const newKeys = new Set(Reflect.ownKeys(props));
-
-  for (const k of Reflect.ownKeys(obj)) {
-    if (!newKeys.has(k)) {
-      delete obj[k];
-    }
-  }
-
-  for (const k of newKeys) {
-    obj[k] = props[k];
-  }
-
-  return obj;
-}
-
 const redirects = [];
 
 class Router {
@@ -1262,7 +1219,7 @@ class Router {
   }
 
   static get install() {
-    return install;
+    return installNeep;
   }
 
   static get View() {
@@ -1301,6 +1258,18 @@ class Router {
     return this._state();
   }
 
+  get params() {
+    return this._params();
+  }
+
+  get query() {
+    return this._query();
+  }
+
+  get meta() {
+    return this._meta();
+  }
+
   constructor({
     History,
     historyOption
@@ -1327,11 +1296,11 @@ class Router {
 
     _defineProperty(this, "_state", value(undefined));
 
-    _defineProperty(this, "params", encase(Object.create(null)));
+    _defineProperty(this, "_params", value({}));
 
-    _defineProperty(this, "query", encase(Object.create(null)));
+    _defineProperty(this, "_query", value({}));
 
-    _defineProperty(this, "meta", encase(Object.create(null)));
+    _defineProperty(this, "_meta", value({}));
 
     if (History) {
       var _history$start;
@@ -1366,7 +1335,7 @@ class Router {
 
   _update(path, search, hash, state, force = false) {
     if (this._path() !== path || force) {
-      var _last$route, _last$route2;
+      var _last$route;
 
       const matches = [...matchRoutes(path, this._routes)];
       const last = matches[matches.length - 1];
@@ -1425,14 +1394,15 @@ class Router {
 
       this._alias((last === null || last === void 0 ? void 0 : (_last$route = last.route) === null || _last$route === void 0 ? void 0 : _last$route.alias) || '');
 
-      update(this.params, (last === null || last === void 0 ? void 0 : last.params) || {});
-      update(this.meta, (last === null || last === void 0 ? void 0 : (_last$route2 = last.route) === null || _last$route2 === void 0 ? void 0 : _last$route2.meta) || {});
+      this._params((last === null || last === void 0 ? void 0 : last.params) || {});
+
+      this._meta(Object.assign({}, ...matches.map(m => m.route.meta)));
     }
 
     if (this._search() !== search) {
       this._search(search);
 
-      update(this.query, (this.parse || parse$1)(search.substr(1)));
+      this._query((this.parse || parse$1)(search.substr(1)));
     }
 
     this._hash(hash);
@@ -1447,7 +1417,7 @@ class Router {
       path,
       search,
       hash
-    } = get(location, this._namedRoutes, this._path(), this.stringify);
+    } = get$1(location, this._namedRoutes, this._path(), this.stringify);
     (_this$history = this.history) === null || _this$history === void 0 ? void 0 : _this$history.push(path, search, hash, state);
 
     this._update(path, search, hash, state);
@@ -1460,7 +1430,7 @@ class Router {
       path,
       search,
       hash
-    } = get(location, this._namedRoutes, this._path(), this.stringify);
+    } = get$1(location, this._namedRoutes, this._path(), this.stringify);
     (_this$history2 = this.history) === null || _this$history2 === void 0 ? void 0 : _this$history2.replace(path, search, hash, state);
 
     this._update(path, search, hash, state);
@@ -1471,7 +1441,7 @@ class Router {
       path,
       search,
       hash
-    } = get(location, this._namedRoutes, this._path(), this.stringify);
+    } = get$1(location, this._namedRoutes, this._path(), this.stringify);
     return `${path}${search}${hash}`;
   }
 
@@ -1512,12 +1482,11 @@ class Router {
   }
 
   get view() {
-    const view = (props, ...p) => RouterView({ ...props,
+    const view = createShellComponent((props, ...p) => RouterView({ ...props,
       router: this
-    }, ...p);
-
-    mName('Router', view);
-    mSimple(view);
+    }, ...p), {
+      name: 'Router'
+    });
     Reflect.defineProperty(this, 'view', {
       value: view,
       enumerable: true,
@@ -1526,6 +1495,124 @@ class Router {
     return view;
   }
 
+}
+
+function createRouteContext(router, depth) {
+  return {
+    get size() {
+      return router.size;
+    },
+
+    get matches() {
+      return router.matches;
+    },
+
+    get match() {
+      return router._get(depth);
+    },
+
+    get alias() {
+      return router.alias;
+    },
+
+    get path() {
+      return router.path;
+    },
+
+    get search() {
+      return router.search;
+    },
+
+    get hash() {
+      return router.hash;
+    },
+
+    get state() {
+      return router.state;
+    },
+
+    get params() {
+      return router.params;
+    },
+
+    get query() {
+      return router.query;
+    },
+
+    get meta() {
+      return router.meta;
+    },
+
+    get router() {
+      return router;
+    },
+
+    push(location, state) {
+      return router.push(location, state);
+    },
+
+    replace(location, state) {
+      return router.replace(location, state);
+    },
+
+    getUrl(location) {
+      return router.getUrl(location);
+    },
+
+    go(index) {
+      return router.go(index);
+    },
+
+    back() {
+      return router.back();
+    },
+
+    forward() {
+      return router.forward();
+    }
+
+  };
+}
+
+function contextConstructor(context) {
+  const data = context.delivered(RouterDeliver);
+
+  if (!data) {
+    return;
+  }
+
+  const {
+    router,
+    depth
+  } = data;
+  Reflect.defineProperty(context, 'route', {
+    value: createRouteContext(router, depth),
+    enumerable: true,
+    configurable: true
+  });
+  Reflect.defineProperty(context, 'match', {
+    get: () => router === null || router === void 0 ? void 0 : router._get(depth),
+    enumerable: true,
+    configurable: true
+  });
+}
+function installContextConstructor() {
+  addContextConstructor(contextConstructor);
+}
+
+function installComponents() {
+  register('RouterView', RouterView);
+  register('router-view', RouterView);
+  register('RouterLink', RouterLink);
+  register('router-link', RouterLink);
+}
+
+var moduleList = [installComponents, installContextConstructor, initDelivers];
+
+function install(Neep) {}
+
+for (const f of moduleList) {
+  f();
 }
 
 export default Router;
