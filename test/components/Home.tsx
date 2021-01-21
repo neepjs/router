@@ -1,8 +1,10 @@
-import { create, mark, mName, createElement, Template } from '@neep/core';
+import Neep from '@neep/core';
+
 import Router from '@neep/router';
 
-const Home = () => {
-	return <Template>
+
+export default Neep.createComponent(() => {
+	return <Neep.Template>
 		<div>首页</div>
 		<hr />
 		<div><Router.Link path="/">首页</Router.Link></div>
@@ -10,6 +12,5 @@ const Home = () => {
 		<div><Router.Link path="/users/1/settings">用户1设置</Router.Link></div>
 		<hr />
 		<Router.View />
-	</Template>;
-};
-export default mark(Home, mName('Home'));
+	</Neep.Template>;
+}, {name: 'Home'});

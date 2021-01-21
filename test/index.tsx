@@ -1,5 +1,5 @@
-import { render } from '@neep/core';
-import '@neep/html-renderer';
+import '@neep/renderer-html';
+import Neep from '@neep/core';
 import '@neep/devtools';
 import App from './App';
-render(App).$mount();
+Neep.render(App).mount();

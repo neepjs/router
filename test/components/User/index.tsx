@@ -1,25 +1,28 @@
-import { create, mark, mName, createElement, Template, useValue, value } from '@neep/core';
+import Neep from '@neep/core';
 import Router from '@neep/router';
 
-const User = create((
+const 组件 = Neep.createComponent(() => {
+	return <div>这是中文组件</div>;
+});
+export default Neep.createComponent((
 	props: { a?: any,  set?: () => void},
 	{ route },
 ) => {
-	const v = useValue(() => Math.random());
-	const s = useValue(() => value(0));
+	const v = Neep.useValue(() => Math.random());
+	const s = Neep.useValue(() => Neep.value(0));
 	s.value++;
-	return <Template>
+	return <Neep.Template>
 	{s.value}: {v}
+		<组件 />
 		<div>用户首页</div>
 		<div>Id: {route?.params?.['id']}</div>
 		<hr />
 		<div><Router.Link path="/">首页</Router.Link></div>
 		<div><Router.Link path="/users/1">用户1</Router.Link></div>
 		<div><Router.Link path="/users/2">用户2</Router.Link></div>
-		<div><Router.Link path="/users/1/info">用户1信息</Router.Link></div>
-		<div><Router.Link path="/users/1/settings">用户1设置</Router.Link></div>
+		<div><Router.Link path={`/users/${route?.params?.['id']}/info`}>用户{route?.params?.['id']}信息</Router.Link></div>
+		<div><Router.Link path={`/users/${route?.params?.['id']}/settings`}>用户{route?.params?.['id']}设置</Router.Link></div>
 		<hr />
 		<Router.View />
-	</Template>;
-});
-export default mark(User, mName('User'));
+	</Neep.Template>;
+}, {name: 'User'});

@@ -4,7 +4,7 @@ import Info from './components/User/Info';
 import Settings from './components/User/Settings';
 import Home from './components/Home';
 const router = new Router({
-	History: Router.history.WebHash,
+	History: Router.history.WebPath,
 });
 router.setRoutes([
 	{ path: '/', redirect: '/home' },

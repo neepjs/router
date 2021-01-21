@@ -1,12 +1,11 @@
-import { create, mark, mName, createElement, Template } from '@neep/core';
+import Neep from '@neep/core';
 
-const Settings = create((
+export default Neep.createComponent((
 	props: { a?: any,  set?: () => void},
 	{ route },
 ) => {
-	return <Template>
+	return <Neep.Template>
 		<div>用户设置</div>
 		<div>Id: {route?.params?.['id']}</div>
-	</Template>;
-});
-export default mark(Settings, mName('UserSettings'));
+	</Neep.Template>;
+}, {name: 'UserSettings'});

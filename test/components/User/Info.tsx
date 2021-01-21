@@ -1,14 +1,13 @@
-import { create, mark, mName, createElement, Template, useValue } from '@neep/core';
+import Neep from '@neep/core';
 
-const Info = create((
+export default  Neep.createComponent((
 	props: { a?: any,  set?: () => void},
 	{ route },
 ) => {
-	const v = useValue(() => Math.random());
-	return <Template>
+	const v = Neep.useValue(() => Math.random());
+	return <Neep.Template>
 		{v}
 		<div>用户信息</div>
 		<div>Id: {route?.params?.['id']}</div>
-	</Template>;
-});
-export default mark(Info, mName('UserInfo'));
+	</Neep.Template>;
+}, { name: 'UserInfo'});

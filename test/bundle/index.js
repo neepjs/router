@@ -4,8 +4,8 @@
 }((function () { 'use strict';
 
   /*!
-   * monitorable v0.1.0-beta.0
-   * (c) 2020 Fierflame
+   * monitorable v0.1.0-beta.1
+   * (c) 2020-2021 Fierflame
    * @license MIT
    */
   /** 打印错误 */
@@ -25,6 +25,16 @@
         printError(e);
       }
     };
+  }
+  /** 回调函数安全化处理 */
+
+
+  function safeCall(fn) {
+    try {
+      fn();
+    } catch (e) {
+      printError(e);
+    }
   }
 
   function getIndexes(target, prop) {
@@ -130,7 +140,7 @@
 
   const watchList = new WeakMap();
 
-  function execWatch(target, prop) {
+  function execWatch(target, prop, filter) {
     var _watchList$get;
 
     const watch = (_watchList$get = watchList.get(target)) === null || _watchList$get === void 0 ? void 0 : _watchList$get.get(prop);
@@ -139,19 +149,25 @@
       return;
     }
 
-    [...watch].forEach(w => w());
+    let list = [...watch];
+
+    if (filter) {
+      list = list.filter(([, t]) => filter(t));
+    }
+
+    list.forEach(([w]) => w());
   }
 
   let waitList;
 
-  function run(list) {
+  function runDeferred(list) {
     for (const [target, set] of list.entries()) {
       var _read;
 
       const propMap = (_read = read) === null || _read === void 0 ? void 0 : _read.get(target);
 
       for (const prop of set) {
-        execWatch(target, prop);
+        execWatch(target, prop, t => !t);
 
         if (propMap === null || propMap === void 0 ? void 0 : propMap.has(prop)) {
           propMap.set(prop, true);
@@ -171,7 +187,7 @@
       waitList = old;
 
       if (list !== waitList) {
-        run(list);
+        runDeferred(list);
       }
     }
   }
@@ -213,6 +229,7 @@
     [target, prop] = indexes;
 
     if (wait(target, prop)) {
+      execWatch(target, prop, Boolean);
       return;
     }
 
@@ -226,7 +243,7 @@
    */
 
 
-  function watchProp(target, prop, cb) {
+  function watchProp(target, prop, cb, disdeferable = false) {
     if (typeof cb !== 'function') {
       return () => {};
     }
@@ -247,8 +264,8 @@
     }
 
     const list = getMapValue(map, key, () => new Set());
-    cb = safeify(cb);
-    list.add(cb);
+    const item = [safeify(cb), disdeferable];
+    list.add(item);
     let removed = false;
     return () => {
       if (removed) {
@@ -257,7 +274,7 @@
 
       removed = true; // 从当前列表中移除
 
-      list.delete(cb); // 从属性关联中删除
+      list.delete(item); // 从属性关联中删除
 
       if (list.size) {
         return;
@@ -276,209 +293,8 @@
       watchList.delete(target);
     };
   }
-  /**
-   * 判断对象是否可被代理
-   */
 
-
-  function encashable$1(v) {
-    return Boolean(v && ['object', 'function'].includes(typeof v));
-  }
-
-  let getValue;
-  /**
-   * 获取被代理对象
-   * @param obj  要被代理的对象
-   * @param nest 递归代理的层数
-   */
-
-  function encase(value, nest = 0) {
-    if (!encashable$1(value)) {
-      return value;
-    }
-
-    const original = recover(value);
-    const nestLayer = nest === true ? Infinity : nest || 0;
-    const proxy = new Proxy(original, {
-      set(target, prop, value, receiver) {
-        if (nest === false) {
-          return Reflect.set(target, prop, value, receiver);
-        }
-
-        const has = Reflect.has(target, prop);
-        const modified = Reflect.set(target, prop, value, encase(receiver));
-
-        if (!modified) {
-          return modified;
-        }
-
-        if (has !== Reflect.has(target, prop)) {
-          markChange(target, true);
-        }
-
-        return modified;
-      },
-
-      get(target, prop, receiver) {
-        if (getValue === proxy) {
-          if (prop === '__monitorable__recover__') {
-            getValue = original;
-            return;
-          }
-        }
-
-        if (nest === false) {
-          return Reflect.get(target, prop, receiver);
-        }
-
-        markRead(target, prop);
-        const value = Reflect.get(target, prop, encase(receiver));
-
-        if (nestLayer > 0) {
-          return encase(value, nestLayer - 1);
-        }
-
-        return value;
-      },
-
-      setPrototypeOf(target, proto) {
-        if (nest === false) {
-          return Reflect.setPrototypeOf(target, proto);
-        }
-
-        const oldProto = Reflect.getPrototypeOf(target);
-        const modified = Reflect.setPrototypeOf(target, proto);
-
-        if (modified && oldProto !== proto) {
-          markChange(target, false);
-        }
-
-        return modified;
-      },
-
-      getPrototypeOf(target) {
-        if (nest === false) {
-          return Reflect.getPrototypeOf(target);
-        }
-
-        markRead(target, false);
-        const value = Reflect.getPrototypeOf(target);
-
-        if (nestLayer > 0) {
-          return encase(value, nestLayer - 1);
-        }
-
-        return value;
-      },
-
-      defineProperty(target, prop, attr) {
-        if (nest === false) {
-          return Reflect.defineProperty(target, prop, attr);
-        }
-
-        let changed = true;
-
-        if ('value' in attr) {
-          const desc = Reflect.getOwnPropertyDescriptor(target, prop);
-
-          if (desc && 'value' in desc && recover(attr.value) === recover(desc.value)) {
-            changed = false;
-          }
-        }
-
-        const modified = Reflect.defineProperty(target, prop, attr);
-
-        if (changed && modified) {
-          markChange(target, prop);
-        }
-
-        return modified;
-      },
-
-      getOwnPropertyDescriptor(target, prop) {
-        if (nest === false) {
-          return Reflect.getOwnPropertyDescriptor(target, prop);
-        }
-
-        markRead(target, prop);
-        return Reflect.getOwnPropertyDescriptor(target, prop);
-      },
-
-      deleteProperty(target, prop) {
-        if (nest === false) {
-          return Reflect.deleteProperty(target, prop);
-        }
-
-        const has = Reflect.has(target, prop);
-        const deleted = Reflect.deleteProperty(target, prop);
-
-        if (has && !Reflect.has(target, prop)) {
-          markChange(target, prop);
-          markChange(target, true);
-        }
-
-        return deleted;
-      },
-
-      ownKeys(target) {
-        if (nest === false) {
-          return Reflect.ownKeys(target);
-        }
-
-        markRead(target, true);
-        return Reflect.ownKeys(target);
-      },
-
-      has(target, prop) {
-        if (nest === false) {
-          return Reflect.has(target, prop);
-        }
-
-        markRead(target, true);
-        return Reflect.has(target, prop);
-      }
-
-    });
-    return proxy;
-  }
-  /** 获取被代理的原始值 */
-
-
-  function recover(v) {
-    if (!v) {
-      return v;
-    }
-
-    if (!encashable$1(v)) {
-      return v;
-    }
-
-    let value = v;
-
-    try {
-      getValue = v;
-      value = v.__monitorable__recover__;
-    } catch (_unused) {}
-
-    value = getValue;
-    getValue = false;
-
-    if (!value) {
-      return v;
-    }
-
-    if (typeof value === 'object') {
-      return value;
-    }
-
-    if (typeof value === 'function') {
-      return value;
-    }
-
-    return v;
-  }
-
-  function run$1(cb, fn, options) {
+  function run(cb, fn, options) {
     cb = safeify(cb);
     let cancelList;
     const postpone = options === null || options === void 0 ? void 0 : options.postpone;
@@ -532,7 +348,7 @@
         }
       }
 
-      cancelList = list.map(([obj, p]) => watchProp(recover(obj), p, trigger));
+      cancelList = list.map(([obj, p]) => watchProp(obj, p, trigger, options === null || options === void 0 ? void 0 : options.disdeferable));
     }
 
     function stop() {
@@ -571,14 +387,14 @@
     }
 
     if (typeof fn === 'function') {
-      return run$1(cb, fn, options);
+      return run(cb, fn, options);
     }
 
     if (typeof options !== 'function') {
       throw new Error('fn needs to be a function');
     }
 
-    return run$1(cb, options, fn);
+    return run(cb, options, fn);
   }
   /**
    * 创建可监听执行函数
@@ -628,7 +444,7 @@
         }
       }
 
-      cancelList = list.map(([obj, p]) => watchProp(recover(obj), p, trigger));
+      cancelList = list.map(([obj, p]) => watchProp(obj, p, trigger, options === null || options === void 0 ? void 0 : options.disdeferable));
     }
 
     function exec(...p) {
@@ -788,16 +604,33 @@
       enumerable: true,
       configurable: true
     });
+    let stopList = new Set();
 
-    function watch(cb) {
-      if (!callbacks) {
+    function watch(cb, disdeferable) {
+      if (!stopList) {
         return () => {};
       }
 
-      cb = safeify(cb);
-      callbacks.push(cb);
-      change();
+      const cancel = watchProp(value, 'value', () => cb(value, false), disdeferable);
       let cancelled = false;
+
+      const stop = () => {
+        if (cancelled) {
+          return;
+        }
+
+        cancelled = true;
+
+        if (stopList) {
+          stopList.delete(stop);
+        }
+
+        cancel();
+        safeCall(() => cb(value, true));
+      };
+
+      stopList.add(stop);
+      change();
       return () => {
         if (cancelled) {
           return;
@@ -805,22 +638,15 @@
 
         cancelled = true;
 
-        if (!callbacks) {
-          return;
+        if (stopList) {
+          stopList.delete(stop);
         }
 
-        const index = callbacks.findIndex(a => a === cb);
-
-        if (index < 0) {
-          return;
-        }
-
-        callbacks.splice(index, 1);
+        cancel();
         change();
       };
     }
 
-    let callbacks = [];
     Reflect.defineProperty(value, 'watch', {
       get() {
         return watch;
@@ -831,34 +657,24 @@
       configurable: true
     });
 
-    const trigger = () => {
-      if (!callbacks) {
-        return;
-      }
-
-      markChange(value, 'value');
-
-      for (const cb of [...callbacks]) {
-        cb(value, false);
-      }
-    };
+    const trigger = () => markChange(value, 'value');
 
     trigger.has = () => {
-      var _callbacks;
+      var _stopList;
 
-      return Boolean((_callbacks = callbacks) === null || _callbacks === void 0 ? void 0 : _callbacks.length);
+      return Boolean((_stopList = stopList) === null || _stopList === void 0 ? void 0 : _stopList.size);
     };
 
     trigger.stop = () => {
-      if (!callbacks) {
+      if (!stopList) {
         return;
       }
 
-      const list = callbacks;
-      callbacks = undefined;
+      const list = stopList;
+      stopList = undefined;
 
-      for (const cb of [...list]) {
-        cb(value, true);
+      for (const stop of [...list]) {
+        stop();
       }
     };
 
@@ -887,23 +703,18 @@
    */
 
 
-  function value(def, options) {
-    const proxy = options === true || options && options.proxy;
+  function value(def) {
     let source;
     let proxyValue;
     const {
       value
     } = createValue(() => proxyValue, (v, mark) => {
-      if (proxy) {
-        v = recover(v);
-      }
-
       if (v === source) {
         return;
       }
 
       source = v;
-      proxyValue = proxy ? encase(source) : source;
+      proxyValue = source;
       mark();
     });
     value(def);
@@ -911,7 +722,7 @@
   }
 
   function computed(getter, setter, options) {
-    var _options;
+    var _options, _options2;
 
     if (typeof setter !== 'function') {
       options = setter;
@@ -919,8 +730,8 @@
     }
 
     const setValue = setter;
-    const proxy = options === true || options && options.proxy;
-    const postpone = typeof options === 'object' && ((_options = options) === null || _options === void 0 ? void 0 : _options.postpone);
+    const postpone = (_options = options) === null || _options === void 0 ? void 0 : _options.postpone;
+    const deferable = (_options2 = options) === null || _options2 === void 0 ? void 0 : _options2.deferable;
     let source;
     let proxyValue;
     let stopped = false;
@@ -933,7 +744,8 @@
         trigger();
       }
     }, getter, {
-      postpone
+      postpone,
+      disdeferable: !deferable
     });
 
     function run() {
@@ -941,12 +753,7 @@
 
       try {
         source = executable();
-
-        if (proxy) {
-          source = recover(source);
-        }
-
-        proxyValue = proxy ? encase(source) : source;
+        proxyValue = source;
         return proxyValue;
       } catch (e) {
         if (!stopped) {
@@ -961,7 +768,7 @@
     ({
       value,
       trigger
-    } = createValue(() => computed || stopped ? proxyValue : run(), setValue && (v => setValue(proxy ? recover(v) : v)), () => {
+    } = createValue(() => computed || stopped ? proxyValue : run(), setValue && (v => setValue(v)), () => {
       if (stopped) {
         return;
       }
@@ -977,7 +784,117 @@
     return value;
   }
 
-  function createValue$2(props, key) {
+  function createValue$1(props, key, def, set) {
+    function setValue(value, setted) {
+      if (!set) {
+        return;
+      }
+
+      set(value, setted);
+    }
+
+    return computed(() => {
+      const p = props[key];
+
+      if (p === undefined && def) {
+        return def();
+      }
+
+      return isValue(p) ? p() : p;
+    }, v => {
+      const p = props[key];
+
+      if (isValue(p)) {
+        p(v);
+        setValue(v, true);
+        return;
+      }
+
+      if (p === undefined && def) {
+        def(v);
+        setValue(v, false);
+        return;
+      }
+
+      setValue(v, false);
+    });
+  }
+
+  function valueify(props, key, def, set) {
+    if (!key) {
+      return (k, d, s) => createValue$1(props, k, d, s);
+    }
+
+    if (!Array.isArray(key)) {
+      return createValue$1(props, key, def, set);
+    }
+
+    const r = Object.create(null);
+
+    for (const k of key) {
+      const value = createValue$1(props, k, def && def(k), set && ((v, s) => set(v, s, k)));
+      Reflect.defineProperty(props, k, {
+        get() {
+          return value();
+        },
+
+        set(v) {
+          value.value = v;
+        },
+
+        configurable: true,
+        enumerable: true
+      });
+    }
+
+    return r;
+  }
+
+  function mixValue(source, props = Reflect.ownKeys(source), set) {
+    const p = Object.create(source);
+
+    if (Array.isArray(props)) {
+      for (const key of props) {
+        const value = createValue$1(source, key, undefined, set && ((v, s) => set(v, s, key)));
+        Reflect.defineProperty(p, key, {
+          get() {
+            return value();
+          },
+
+          set(v) {
+            value.value = v;
+          },
+
+          configurable: true,
+          enumerable: true
+        });
+      }
+
+      return p;
+    }
+
+    const keys = Reflect.ownKeys(props);
+
+    for (const key of keys) {
+      const value = createValue$1(source, key, props[key], set && ((v, s) => set(v, s, key)));
+      Reflect.defineProperty(p, key, {
+        get() {
+          return value();
+        },
+
+        set(v) {
+          value.value = v;
+        },
+
+        configurable: true,
+        enumerable: true
+      });
+    }
+
+    return p;
+  }
+
+  function createAsValue(props, key) {
     return computed(() => {
       const p = props[key];
       return isValue(p) ? p() : p;
@@ -994,17 +911,282 @@
 
   function asValue(props, key) {
     if (arguments.length >= 2) {
-      return createValue$2(props, key);
+      return createAsValue(props, key);
     }
 
-    return k => createValue$2(props, k);
+    return k => createAsValue(props, k);
+  }
+
+  function defineProperty(obj, key, val) {
+    return Reflect.defineProperty(obj, key, {
+      get() {
+        markRead(obj, key);
+        return val;
+      },
+
+      set(v) {
+        if (v === val) {
+          return;
+        }
+
+        val = v;
+        markChange(obj, key);
+      },
+
+      configurable: true,
+      enumerable: true
+    });
+  }
+
+  function createObject(keys, base = {}, create) {
+    const obj = create || base === null ? Object.create(base) : base;
+
+    for (const key of keys) {
+      let val = obj[key];
+      Reflect.defineProperty(obj, key, {
+        get() {
+          markRead(obj, key);
+          return val;
+        },
+
+        set(v) {
+          if (v === val) {
+            return;
+          }
+
+          val = v;
+          markChange(obj, key);
+        },
+
+        configurable: true,
+        enumerable: true
+      });
+    }
+
+    return obj;
+  }
+  /**
+   * 判断对象是否可被代理
+   */
+
+
+  function encashable$1(v) {
+    return Boolean(v && ['object', 'function'].includes(typeof v));
+  }
+
+  let getValue;
+  /**
+   * 获取被代理对象
+   * @param obj  要被代理的对象
+   * @param nest 递归代理的层数
+   */
+
+  function encase(value, nest = 0) {
+    if (!encashable$1(value)) {
+      return value;
+    }
+
+    const original = recover(value);
+    const nestLayer = nest === true ? Infinity : nest || 0;
+    const proxy = new Proxy(original, {
+      set(target, prop, value, receiver) {
+        if (nest === false) {
+          return Reflect.set(target, prop, value, receiver);
+        }
+
+        const has = Reflect.has(target, prop);
+        const old = Reflect.get(target, prop, receiver);
+        const modified = Reflect.set(target, prop, value, encase(receiver));
+
+        if (!modified) {
+          return modified;
+        }
+
+        if (has !== Reflect.has(target, prop)) {
+          markChange(receiver, true);
+        }
+
+        if (old !== Reflect.get(target, prop, receiver)) {
+          markChange(receiver, prop);
+        }
+
+        return modified;
+      },
+
+      get(target, prop, receiver) {
+        if (getValue === proxy) {
+          if (prop === '__monitorable__recover__') {
+            getValue = original;
+            return;
+          }
+        }
+
+        if (nest === false) {
+          return Reflect.get(target, prop, receiver);
+        }
+
+        markRead(receiver, prop);
+        const value = Reflect.get(target, prop, encase(receiver));
+
+        if (nestLayer > 0) {
+          return encase(value, nestLayer - 1);
+        }
+
+        return value;
+      },
+
+      setPrototypeOf(target, proto) {
+        if (nest === false) {
+          return Reflect.setPrototypeOf(target, proto);
+        }
+
+        const oldProto = Reflect.getPrototypeOf(target);
+        const modified = Reflect.setPrototypeOf(target, proto);
+
+        if (modified && oldProto !== proto) {
+          markChange(target, false);
+          markChange(proxy, false);
+        }
+
+        return modified;
+      },
+
+      getPrototypeOf(target) {
+        if (nest === false) {
+          return Reflect.getPrototypeOf(target);
+        }
+
+        markRead(target, false);
+        markRead(proxy, false);
+        const value = Reflect.getPrototypeOf(target);
+
+        if (nestLayer > 0) {
+          return encase(value, nestLayer - 1);
+        }
+
+        return value;
+      },
+
+      defineProperty(target, prop, attr) {
+        if (nest === false) {
+          return Reflect.defineProperty(target, prop, attr);
+        }
+
+        let changed = true;
+
+        if ('value' in attr) {
+          const desc = Reflect.getOwnPropertyDescriptor(target, prop);
+
+          if (desc && 'value' in desc && recover(attr.value) === recover(desc.value)) {
+            changed = false;
+          }
+        }
+
+        const modified = Reflect.defineProperty(target, prop, attr);
+
+        if (changed && modified) {
+          markChange(target, prop);
+          markChange(proxy, prop);
+        }
+
+        return modified;
+      },
+
+      getOwnPropertyDescriptor(target, prop) {
+        if (nest === false) {
+          return Reflect.getOwnPropertyDescriptor(target, prop);
+        }
+
+        markRead(target, prop);
+        markRead(proxy, prop);
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      },
+
+      deleteProperty(target, prop) {
+        if (nest === false) {
+          return Reflect.deleteProperty(target, prop);
+        }
+
+        const has = Reflect.has(target, prop);
+        const deleted = Reflect.deleteProperty(target, prop);
+
+        if (has && !Reflect.has(target, prop)) {
+          markChange(target, prop);
+          markChange(target, true);
+          markChange(proxy, prop);
+          markChange(proxy, true);
+        }
+
+        return deleted;
+      },
+
+      ownKeys(target) {
+        if (nest === false) {
+          return Reflect.ownKeys(target);
+        }
+
+        markRead(target, true);
+        markRead(proxy, true);
+        return Reflect.ownKeys(target);
+      },
+
+      has(target, prop) {
+        if (nest === false) {
+          return Reflect.has(target, prop);
+        }
+
+        markRead(target, true);
+        markRead(proxy, true);
+        return Reflect.has(target, prop);
+      }
+
+    });
+    return proxy;
+  }
+  /** 获取被代理的原始值 */
+
+
+  function recover(v) {
+    if (!v) {
+      return v;
+    }
+
+    if (!encashable$1(v)) {
+      return v;
+    }
+
+    let value = v;
+
+    try {
+      getValue = v;
+      value = v.__monitorable__recover__;
+    } catch (_unused) {}
+
+    value = getValue;
+    getValue = false;
+
+    if (!value) {
+      return v;
+    }
+
+    if (typeof value === 'object') {
+      return value;
+    }
+
+    if (typeof value === 'function') {
+      return value;
+    }
+
+    return v;
   }
 
   /*!
-   * Neep v0.1.0-alpha.15
-   * (c) 2019-2020 Fierflame
+   * Neep v0.1.0-alpha.17
+   * (c) 2019-2021 Fierflame
    * @license MIT
    */
+  const version = '0.1.0-alpha.16';
+  const isProduction = "development" === 'production';
   const devtools = {
     renderHook() {}
 
@@ -1066,40 +1248,37 @@
 
   function nextFrame(fn) {
     assert(nextFrameApi, 'The basic renderer is not installed', 'install');
-
-    if (nextFrameApi) {
-      nextFrameApi(fn);
-    }
+    nextFrameApi(fn);
   }
 
-  const renders = Object.create(null);
+  const renderers = Object.create(null);
 
-  function getRender(type = '') {
+  function getRender(type = '', def = renderers.default) {
     if (typeof type === 'object') {
       return type;
     }
 
-    return renders[type] || renders.default;
+    return renderers[type] || def;
   }
 
-  function installRender(render) {
-    if (!render) {
+  function installRender(renderer) {
+    if (!renderer) {
       return;
     }
 
-    renders[render.type] = render;
+    renderers[renderer.type] = renderer;
 
     if (nextFrameApi) {
       return;
     }
 
-    if (!renders.default) {
-      renders.default = render;
+    if (!renderers.default) {
+      renderers.default = renderer;
     }
 
-    if (!nextFrameApi && render.nextFrame) {
-      renders.default = render;
-      nextFrameApi = render.nextFrame;
+    if (!nextFrameApi && renderer.nextFrame) {
+      renderers.default = renderer;
+      nextFrameApi = renderer.nextFrame.bind(renderer);
     }
   }
 
@@ -1107,369 +1286,242 @@
 
   function install(apis) {
     installMonitorable(apis.monitorable);
-    installRender(apis.render);
+    installRender(apis.renderer);
 
     {
       installDevtools(apis.devtools);
     }
   }
 
-  let current;
+  const ScopeSlot = 'core:scopeslot';
+  const Render = 'core:render';
+  const Slot = 'core:slot';
+  const Container = 'core:container';
+  const Template = 'template';
+  const Fragment = Template;
 
-  function setCurrent(fn, entity) {
+  function createEntitySetRef(set) {
+    return function refValue(_0, _1, entity, state) {
+      if (state === true) {
+        set.add(entity);
+        return;
+      }
+
+      if (state === false) {
+        set.delete(entity);
+      }
+    };
+  }
+
+  function createExposedSetRef(set) {
+    return function refValue(newNode, oldNode) {
+      if (newNode === undefined) {
+        if (oldNode !== undefined) {
+          set.delete(oldNode);
+        }
+
+        return;
+      }
+
+      if (oldNode === undefined) {
+        set.add(newNode);
+        return;
+      }
+
+      if (typeof set.replace === 'function') {
+        set.replace(newNode, oldNode);
+        return;
+      }
+
+      set.delete(oldNode);
+      set.add(newNode);
+    };
+  }
+
+  function createEntityRefValue(watch) {
+    const obj = watch ? value(undefined) : {
+      value: undefined
+    };
+
+    function refValue(_1, _2, entity, state) {
+      obj.value = state === false ? entity : undefined;
+    }
+
+    Reflect.defineProperty(refValue, 'value', {
+      get() {
+        return obj.value;
+      },
+
+      enumerable: true,
+      configurable: true
+    });
+    return refValue;
+  }
+
+  function createExposedRefValue(watch) {
+    const obj = watch ? value(undefined) : {
+      value: undefined
+    };
+
+    function refValue(newNode) {
+      obj.value = newNode;
+    }
+
+    Reflect.defineProperty(refValue, 'value', {
+      get() {
+        return obj.value;
+      },
+
+      enumerable: true,
+      configurable: true
+    });
+    return refValue;
+  }
+
+  function ref(set, isEntity) {
+    if (set && (typeof set === 'function' || typeof set === 'object')) {
+      return isEntity ? createEntitySetRef(set) : createExposedSetRef(set);
+    }
+
+    return isEntity ? createEntityRefValue(set) : createExposedRefValue(set);
+  }
+
+  let current;
+  let isInit = false;
+  let root = [];
+  let hookList = [];
+  let runs = [];
+
+  function getUseHookValue(name, lib, init) {
+    assert(current, `Function \`${name}\` can only be called within a cycle.`, 'life');
+
+    if (isInit) {
+      const value = init(current);
+      hookList.push({
+        name,
+        lib,
+        value
+      });
+      return value;
+    }
+
+    const next = hookList.shift();
+    assert(next && next.name === name && next.lib === lib && !next.list, '');
+
+    {
+      runs.push({
+        name,
+        lib
+      });
+    }
+
+    return next.value;
+  }
+
+  function execUseHooks(name, lib, run) {
+    assert(current, `Function \`${name}\` can only be called within a cycle.`, 'life');
+
+    if (isInit) {
+      const list = [];
+      hookList.push({
+        name,
+        lib,
+        list
+      });
+      const parent = hookList;
+      hookList = list;
+
+      try {
+        return run(current);
+      } finally {
+        hookList = parent;
+      }
+    }
+
+    const next = hookList.shift();
+    assert(next && next.name === name && next.lib === lib && next.list, '');
+    const parent = hookList;
+    const list = [...next.list];
+    hookList = list;
+
+    {
+      const runList = [];
+      runs.push({
+        name,
+        lib,
+        list: runList
+      });
+      const runParent = runs;
+      runs = runList;
+
+      try {
+        const ret = run(current);
+        assert(!list.length, '');
+        return ret;
+      } finally {
+        hookList = parent;
+        runs = runParent;
+      }
+    }
+  }
+
+  let setLabels;
+
+  function runShell(setLabel, fn) {
+    {
+      const oldSetLabel = setLabels;
+      setLabels = setLabel;
+
+      try {
+        return fn();
+      } finally {
+        setLabels = oldSetLabel;
+      }
+    }
+
+    return fn();
+  }
+
+  function runCurrent(entity, setLabel, fn) {
+    const oldSetLabel = setLabels;
+
+    {
+      setLabels = setLabel;
+    }
+
     const oldEntity = current;
     current = entity;
+    const oldIsInit = isInit;
+    isInit = !entity.created;
+    const oldRuns = runs;
+    runs = [];
+    const oldRoot = root;
+    root = current.$_useHookValues;
+    const oldHookList = hookList;
+    hookList = isInit ? root : [...root];
 
     try {
-      current.$_valueIndex = 0;
-      current.$_serviceIndex = 0;
       const ret = fn();
-
-      if (current.$_valueIndex !== current.$_values.length) {
-        throw new NeepError('Inconsistent number of useValue executions', 'life');
-      }
-
-      if (current.$_serviceIndex && current.$_serviceIndex !== current.$_services.length) {
-        throw new NeepError('Inconsistent number of useService executions', 'life');
-      }
-
+      assert(isInit || !hookList.length, 'Inconsistent number of useService executions', 'life');
       return ret;
     } finally {
       current = oldEntity;
+      isInit = oldIsInit;
+      hookList = oldHookList;
+      runs = oldRuns;
+      root = oldRoot;
+
+      {
+        setLabels = oldSetLabel;
+      }
     }
   }
 
   function checkCurrent(name, initOnly = false) {
-    if (!current) {
-      throw new NeepError(`Function \`${name}\` can only be called within a cycle.`, 'life');
-    }
-
-    if (!initOnly) {
-      return current;
-    }
-
-    if (!current.created) {
-      return current;
-    }
-
-    throw new NeepError(`Function \`${name}\` can only be called at initialization time.`, 'life');
+    assert(current, `Function \`${name}\` can only be called within a cycle.`, 'life');
+    assert(!initOnly || !current.created, `Function \`${name}\` can only be called at initialization time.`, 'life');
+    return current;
   }
-
-  const constructors = [];
-
-  function initContext(context, entity) {
-    for (const constructor of constructors) {
-      constructor(context, entity);
-    }
-
-    return context;
-  }
-
-  function addContextConstructor(constructor) {
-    constructors.push(safeify(constructor));
-  }
-
-  const constructors$1 = [];
-
-  function initEntity(entity) {
-    for (const constructor of constructors$1) {
-      constructor(entity);
-    }
-
-    return entity;
-  }
-
-  let delayedRefresh = 0;
-  const objectSet = new Set();
-
-  function wait$1(obj) {
-    if (delayedRefresh <= 0) {
-      return false;
-    }
-
-    objectSet.add(obj);
-    return true;
-  }
-
-  function run$2() {
-    if (delayedRefresh > 0) {
-      return;
-    }
-
-    const list = [...objectSet];
-    objectSet.clear();
-    list.forEach(o => o.refresh());
-  }
-
-  async function asyncRefresh(f) {
-    try {
-      delayedRefresh++;
-      return await f();
-    } finally {
-      delayedRefresh--;
-      run$2();
-    }
-  }
-
-  function refresh(f, async) {
-    if (async) {
-      return asyncRefresh(f);
-    }
-
-    try {
-      delayedRefresh++;
-      return f();
-    } finally {
-      delayedRefresh--;
-      run$2();
-    }
-  }
-
-  function getEventName(k) {
-    if (k[0] === '@') {
-      return k.substr(1);
-    }
-
-    if (/^on[:-]/.test(k)) {
-      return k.substr(3);
-    }
-
-    if (/^n([:-])on(\1|:)/.test(k)) {
-      return k.substr(5);
-    }
-
-    return '';
-  }
-
-  function addEventFromCollection(addEvent, events) {
-    if (!events) {
-      return;
-    }
-
-    if (typeof events === 'function') {
-      const {
-        names
-      } = events;
-
-      if (!Array.isArray(names)) {
-        return;
-      }
-
-      for (const n of names) {
-        if (!n) {
-          continue;
-        }
-
-        addEvent(n, (...p) => events(n, ...p));
-      }
-
-      return;
-    }
-
-    if (typeof events !== 'object') {
-      return;
-    }
-
-    for (const k of Object.keys(events)) {
-      const f = events[k];
-
-      if (typeof f !== 'function') {
-        continue;
-      }
-
-      addEvent(k, f);
-    }
-  }
-
-  class EventEmitter {
-    static update(emitter, events) {
-      if (!events) {
-        return [];
-      }
-
-      const newHandles = [];
-
-      if (events && typeof events === 'object') {
-        for (const n of Object.keys(events)) {
-          if (!n) {
-            continue;
-          }
-
-          const fn = events[n];
-
-          if (typeof fn !== 'function') {
-            continue;
-          }
-
-          newHandles.push(emitter.on(n, fn));
-        }
-      }
-
-      return newHandles;
-    }
-
-    static updateInProps(emitter, props, custom) {
-      if (!props) {
-        return [];
-      }
-
-      const newHandles = [];
-
-      function addEvent(entName, listener) {
-        newHandles.push(emitter.on(entName, listener));
-      }
-
-      for (const k of Object.keys(props)) {
-        const fn = props[k];
-
-        if (typeof fn !== 'function') {
-          continue;
-        }
-
-        const entName = getEventName(k);
-
-        if (!entName) {
-          continue;
-        }
-
-        addEvent(entName, fn);
-      }
-
-      addEventFromCollection(addEvent, props['@']);
-      addEventFromCollection(addEvent, props['n:on']);
-      addEventFromCollection(addEvent, props['n-on']);
-
-      if (typeof custom === 'function') {
-        custom(addEvent);
-      }
-
-      newHandles.push(...EventEmitter.update(emitter, props['@']));
-      return newHandles;
-    }
-
-    get names() {
-      return [...this._names];
-    }
-
-    constructor() {
-      _defineProperty(this, "_names", new Set());
-
-      _defineProperty(this, "_cancelHandles", new Set());
-
-      _defineProperty(this, "emit", void 0);
-
-      _defineProperty(this, "on", void 0);
-
-      const events = Object.create(null);
-      const names = this._names;
-
-      function createEmit(...omitNames) {
-        function emit(name, ...p) {
-          const event = events[name];
-
-          if (!event) {
-            return true;
-          }
-
-          return refresh(() => {
-            let res = true;
-
-            for (const fn of [...event]) {
-              res = fn(...p) && res;
-            }
-
-            return res;
-          });
-        }
-
-        emit.omit = (...names) => createEmit(...omitNames, ...names);
-
-        Reflect.defineProperty(emit, 'names', {
-          get: () => {
-            markRead(createEmit, 'names');
-            return [...names].filter(t => !omitNames.includes(t));
-          },
-          configurable: true
-        });
-        return emit;
-      }
-
-      const on = (name, listener) => {
-        var _event;
-
-        function fn(...p) {
-          try {
-            return listener(...p) !== false;
-          } catch (e) {
-            printError(e);
-            return true;
-          }
-        }
-
-        let event = events[name];
-
-        if (!((_event = event) === null || _event === void 0 ? void 0 : _event.size)) {
-          event = new Set();
-          events[name] = event;
-          markChange(createEmit, 'names');
-          names.add(name);
-        }
-
-        event.add(fn);
-        let removed = false;
-        return () => {
-          if (removed) {
-            return;
-          }
-
-          removed = true;
-          event.delete(fn);
-
-          if (event.size) {
-            return;
-          }
-
-          markChange(createEmit, 'names');
-          names.delete(name);
-        };
-      };
-
-      this.emit = createEmit();
-      this.on = on;
-    }
-
-    updateHandles(newHandles) {
-      const eventCancelHandles = this._cancelHandles;
-      const oldHandles = [...eventCancelHandles];
-      eventCancelHandles.clear();
-
-      for (const fn of oldHandles) {
-        fn();
-      }
-
-      newHandles.forEach(f => eventCancelHandles.add(f));
-      return newHandles;
-    }
-
-    update(list) {
-      const handles = EventEmitter.update(this, list);
-      return this.updateHandles(handles);
-    }
-
-    updateInProps(list, custom) {
-      const handles = EventEmitter.updateInProps(this, list, custom);
-      return this.updateHandles(handles);
-    }
-
-  }
-
-  const ScopeSlot = 'neep:ScopeSlot';
-  const SlotRender = 'neep:SlotRender';
-  const Slot = 'neep:slot';
-  const Value = 'neep:value';
-  const Container = 'neep:container';
-  const Template = 'template';
-  const Fragment = Template;
 
   const hooks = Object.create(null);
 
@@ -1492,48 +1544,139 @@
     return () => set.delete(hook);
   }
 
-  function callHook(id, exposed) {
-    if (!exposed) {
+  function callHook(id, entity) {
+    if (!entity) {
       return;
     }
 
-    for (const hook of exposed.$_hooks[id] || []) {
-      hook(exposed);
+    for (const hook of entity.$_hooks[id] || []) {
+      hook(entity);
     }
 
     for (const hook of hooks[id] || []) {
-      hook(exposed);
+      hook(entity);
     }
+  }
+
+  function watch(value, cb, run) {
+    const entity = checkCurrent('watch');
+
+    if (typeof value !== 'function') {
+      return () => {};
+    }
+
+    let stop;
+
+    if (isValue(value)) {
+      stop = value.watch(cb);
+      cb(value, false);
+    } else {
+      const v = computed(value);
+      stop = v.watch((v, s) => cb(v(), s));
+      cb(v(), false);
+    }
+
+    setHook('beforeDestroy', () => stop(), entity);
+    return stop;
   }
 
   function useValue(fn) {
-    const entity = checkCurrent('useValue');
-    const index = entity.$_valueIndex++;
-    const values = entity.$_values;
-
-    if (!entity.created) {
-      values[index] = undefined;
-      const v = typeof fn === 'function' ? fn() : value(undefined);
-      return values[index] = v;
-    }
-
-    if (index >= values.length) {
-      throw new NeepError('Inconsistent number of useValue executions', 'life');
-    }
-
-    return values[index];
+    return getUseHookValue('useValue', 'core', typeof fn === 'function' ? fn : () => value(undefined));
   }
 
-  const typeSymbol = Symbol.for('type');
+  function useService(fn, ...p) {
+    return getUseHookValue('useService', 'core', entity => fn(entity, ...p));
+  }
+
+  function byService(fn, ...p) {
+    const entity = checkCurrent('byService');
+    return fn(entity, ...p);
+  }
+
+  function hook(name, hook, initOnly) {
+    const entity = checkCurrent('setHook');
+
+    if (initOnly && entity.created) {
+      return undefined;
+    }
+
+    return setHook(name, () => hook(), entity);
+  }
+
+  const rendererSymbol = Symbol.for('renderer');
   const nameSymbol = Symbol.for('name');
-  const renderSymbol = Symbol.for('render');
   const componentsSymbol = Symbol.for('components');
-  const configSymbol = Symbol.for('config');
+  const propsSymbol = Symbol.for('props');
+  const componentValueSymbol = Symbol.for('$$$componentValue$$$');
   const objectTypeSymbol = Symbol.for('$$$objectType$$$');
   const objectTypeSymbolElement = '$$$objectType$$$Element';
-  const objectTypeSymbolDeliver = '$$$objectType$$$Deliver';
+  const objectTypeSymbolDeliverComponent = '$$$objectType$$$DeliverComponent';
+  const objectTypeSymbolNativeComponent = '$$$objectType$$$NativeComponentNode';
+  const objectTypeSymbolSimpleComponent = '$$$objectType$$$SimpleComponent';
+  const objectTypeSymbolShellComponent = '$$$objectType$$$ShellComponent';
+  const objectTypeSymbolRenderComponent = '$$$objectType$$$RenderComponent';
+  const objectTypeSymbolContainerComponent = '$$$objectType$$$ContainerComponent';
+  const objectTypeSymbolElementComponent = '$$$objectType$$$ElementComponent';
+  const objectTypeSymbolHookEntity = '$$$objectType$$$HookEntity';
+  const objectTypeSymbolRootEntity = '$$$objectType$$$RootEntity';
   const deliverKeySymbol = Symbol.for('$$$deliverKey$$$');
   const deliverDefaultSymbol = Symbol.for('$$$deliverDefault$$$');
+
+  function isSimpleComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolSimpleComponent;
+  }
+
+  function isShellComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolShellComponent;
+  }
+
+  function isNativeComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolNativeComponent;
+  }
+
+  function isRenderComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolRenderComponent;
+  }
+
+  function isContainerComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolContainerComponent;
+  }
+
+  function isElementComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolElementComponent;
+  }
+
+  function isDeliverComponent(v) {
+    if (typeof v !== 'function') {
+      return false;
+    }
+
+    return v[objectTypeSymbol] === objectTypeSymbolDeliverComponent;
+  }
 
   function isElement(v) {
     if (!v) {
@@ -1547,87 +1690,185 @@
     return v[objectTypeSymbol] === objectTypeSymbolElement;
   }
 
+  function isFragmentElement(v) {
+    if (!isElement(v)) {
+      return false;
+    }
+
+    const {
+      tag
+    } = v;
+
+    if (typeof tag !== 'string') {
+      return false;
+    }
+
+    return tag.toLowerCase() === 'template';
+  }
+
+  function isRenderElement(v) {
+    if (!isElement(v)) {
+      return false;
+    }
+
+    const {
+      tag
+    } = v;
+
+    if (typeof tag !== 'string') {
+      return false;
+    }
+
+    return tag.toLowerCase() === Render;
+  }
+
+  function isSimpleElement(v) {
+    return isElement(v) && isSimpleComponent(v.tag);
+  }
+
   function createElement(tag, attrs, ...children) {
-    const props = attrs ? { ...attrs
+    const attrProps = attrs ? { ...attrs
     } : {};
+    const props = {};
+
+    for (const n of Object.keys(attrProps)) {
+      if (n === '@') {
+        props['n:on'] = attrProps[n];
+        continue;
+      }
+
+      if (n[0] === '!') {
+        props[`n:${n.substr(1)}`] = attrProps[n];
+        continue;
+      }
+
+      if (n[0] === '@') {
+        props[`on:${n.substr(1)}`] = attrProps[n];
+        continue;
+      }
+
+      if (n.substr(0, 2) === 'n-') {
+        props[`n:${n.substr(2)}`] = attrProps[n];
+        continue;
+      }
+
+      if (n.substr(0, 3) === 'on-') {
+        const fn = attrProps[n];
+
+        if (typeof fn === 'function' || fn === null || fn === undefined) {
+          props[`on:${n.substr(3)}`] = fn;
+        }
+
+        continue;
+      }
+
+      if (n.substr(0, 5) === 'hook-') {
+        const fn = attrProps[n];
+
+        if (typeof fn === 'function' || fn === null || fn === undefined) {
+          props[`hook:${n.substr(5)}`] = fn;
+        }
+
+        continue;
+      }
+
+      if (n.substr(0, 5) === 'data-') {
+        props[`data:${n.substr(5)}`] = attrProps[n];
+      }
+
+      props[n] = attrProps[n];
+    }
+
+    return createElementBase(tag, props, ...children);
+  }
+
+  function createElementBase(tag, attrs, ...children) {
+    const props = typeof attrs === 'object' && attrs || {};
     const node = {
       [objectTypeSymbol]: objectTypeSymbolElement,
       tag,
-      key: undefined,
       props,
-      children
+      children,
+      key: undefined
     };
 
     if ('n:key' in props) {
       node.key = props['n:key'];
-    } else if ('n-key' in props) {
-      node.key = props['n-key'];
-    } else if ('key' in props) {
-      node.key = props.key;
     }
 
     if ('n:slot' in props) {
       node.slot = props['n:slot'];
-    } else if ('n-slot' in props) {
-      node.slot = props['n-slot'];
-    } else if ('slot' in props) {
-      node.slot = props.slot;
-    }
-
-    if (typeof props['n:ref'] === 'function') {
-      node.ref = props['n:ref'];
-    } else if (typeof props['n-ref'] === 'function') {
-      node.ref = props['n-ref'];
-    } else if (typeof props.ref === 'function') {
-      node.ref = props.ref;
-    }
-
-    if (tag === Value) {
-      node.value = props.value;
     }
 
     return node;
   }
 
-  function equalProps(a, b) {
-    if (Object.is(a, b)) {
-      return true;
-    }
+  function createRenderElement(render, {
+    slot,
+    key
+  } = {}) {
+    const node = {
+      [objectTypeSymbol]: objectTypeSymbolElement,
+      tag: Render,
+      props: {
+        'n:key': key,
+        'n:slot': slot
+      },
+      children: [render],
+      key,
+      slot
+    };
+    return node;
+  }
 
-    if (!a) {
-      return false;
-    }
+  function elements(node, opt = {}) {
+    if (Array.isArray(node)) {
+      const list = [];
 
-    if (!b) {
-      return false;
-    }
-
-    if (typeof a !== 'object') {
-      return false;
-    }
-
-    if (typeof b !== 'object') {
-      return false;
-    }
-
-    const aKeys = new Set(Reflect.ownKeys(a));
-    const bKeys = Reflect.ownKeys(b);
-
-    if (aKeys.size !== bKeys.length) {
-      return false;
-    }
-
-    for (const k of bKeys) {
-      if (!aKeys.has(k)) {
-        return false;
+      for (let n of node) {
+        list.push(elements(n, opt));
       }
 
-      if (a[k] !== b[k]) {
-        return false;
-      }
+      return [].concat(...list);
     }
 
-    return true;
+    if (!isElement(node)) {
+      return [node];
+    }
+
+    let {
+      tag
+    } = node;
+
+    if (!tag) {
+      return [node];
+    }
+
+    if (tag === Template) {
+      return elements(node.children, opt);
+    }
+
+    if (!isSimpleComponent(tag)) {
+      return [node];
+    }
+
+    const {
+      simple
+    } = opt;
+
+    if (Array.isArray(simple)) {
+      if (simple.includes(tag)) {
+        return [node];
+      }
+    } else if (typeof simple === 'function') {
+      if (simple(tag)) {
+        return [node];
+      }
+    } else if (simple) {
+      return [node];
+    }
+
+    return elements(node.children, opt);
   }
 
   function equal(a, b) {
@@ -1693,11 +1934,7 @@
       return false;
     }
 
-    if (a.ref !== b.ref) {
-      return false;
-    }
-
-    if (a.value !== b.value) {
+    if (a.isDefault !== b.isDefault) {
       return false;
     }
 
@@ -1709,68 +1946,69 @@
       return false;
     }
 
-    return equalProps(a.props, b.props) && equal(a.children, b.children);
-  }
+    const aprops = a.props;
+    const bprops = b.props;
 
-  let label;
-
-  function setLabel(l) {
-    label = l;
-  }
-
-  function getLabel() {
-    const l = label;
-    label = undefined;
-    return l;
-  }
-
-  function label$1(text, color = '') {
-    {
-      if (!current) {
-        setLabel([text, color]);
-        return;
-      }
-
-      Reflect.defineProperty(current.exposed, '$label', {
-        value: [text, color],
-        configurable: true
-      });
-    }
-  }
-
-  function createDeliver(def) {
-    const symbol = Symbol();
-
-    function Provider(_, {
-      childNodes
-    }) {
-      return childNodes;
+    if (Object.is(aprops, bprops)) {
+      return equal(a.children, b.children);
     }
 
-    Reflect.defineProperty(Provider, objectTypeSymbol, {
-      value: objectTypeSymbolDeliver
-    });
-    Reflect.defineProperty(Provider, deliverKeySymbol, {
-      value: symbol
-    });
-    Reflect.defineProperty(Provider, deliverDefaultSymbol, {
-      value: def
-    });
-    return Provider;
-  }
-
-  function isDeliver(d) {
-    if (typeof d !== 'function') {
+    if (!aprops) {
       return false;
     }
 
-    return d[objectTypeSymbol] === objectTypeSymbolDeliver;
+    if (!bprops) {
+      return false;
+    }
+
+    if (typeof aprops !== 'object') {
+      return false;
+    }
+
+    if (typeof bprops !== 'object') {
+      return false;
+    }
+
+    const aKeys = new Set(Object.keys(aprops));
+    const bKeys = Object.keys(bprops);
+
+    if (aKeys.size !== bKeys.length) {
+      return false;
+    }
+
+    for (const k of bKeys) {
+      if (!aKeys.has(k)) {
+        return false;
+      }
+
+      if (aprops[k] !== bprops[k]) {
+        return false;
+      }
+    }
+
+    return equal(a.children, b.children);
   }
 
-  function getDelivered(delivered, Deliver) {
-    assert(isDeliver(Deliver), '');
-    const value = delivered[Deliver[deliverKeySymbol]];
-    return value === undefined ? Deliver[deliverDefaultSymbol] : value;
+  function createTemplateElement(...children) {
+    return {
+      [objectTypeSymbol]: objectTypeSymbolElement,
+      tag: Template,
+      children
+    };
+  }
+
+  function label(...label) {
+    {
+      const labels = label.filter(Boolean).map(t => typeof t === 'string' ? {
+        text: t
+      } : t);
+
+      if (!setLabels) {
+        return;
+      }
+
+      setLabels(labels);
+    }
   }
 
   let ids = 0;
@@ -1778,7 +2016,7 @@
   let IdMap;
 
   {
-    IdMap = new Map();
+    IdMap = new WeakMap();
   }
 
   function createMountedNode(n, id) {
@@ -1792,9 +2030,12 @@
         IdMap.set(node, id);
       }
 
-      return Nodes[id] = { ...n,
+      const newNode = { ...n,
         id
       };
+      Nodes[id] = newNode;
+      markChange(Nodes, id);
+      return newNode;
     }
   }
 
@@ -1804,37 +2045,241 @@
     }
   }
 
-  function* recursive2iterable(list) {
-    if (!Array.isArray(list)) {
-      yield list;
-      return;
-    }
+  function getNode(id) {
+    {
+      if (typeof id !== 'number') {
+        var _IdMap;
 
-    for (const it of list) {
-      yield* recursive2iterable(it);
+        id = ((_IdMap = IdMap) === null || _IdMap === void 0 ? void 0 : _IdMap.get(id)) || -1;
+      }
+
+      markRead(Nodes, id);
+      return Nodes[id];
     }
   }
 
-  let refList;
+  let completeList;
 
-  function setRefList(list) {
-    refList = list;
+  function setCompleteList(list) {
+    completeList = list;
   }
 
-  function setRef(ref, node, isRemove) {
-    if (typeof ref !== 'function') {
-      return;
-    }
-
-    if (!node) {
-      return;
-    }
-
-    if (!refList) {
-      ref(node, isRemove);
+  function complete(it) {
+    if (!completeList) {
+      it();
     } else {
-      refList.push(() => ref(node, isRemove));
+      completeList.push(it);
     }
+  }
+
+  class BaseProxy {
+    constructor(renderer, originalTag, tag, attrs, parent, delivered) {
+      _defineProperty(this, "tag", void 0);
+
+      _defineProperty(this, "attrs", void 0);
+
+      _defineProperty(this, "renderer", void 0);
+
+      _defineProperty(this, "labels", void 0);
+
+      _defineProperty(this, "parentProxy", void 0);
+
+      _defineProperty(this, "delivered", void 0);
+
+      _defineProperty(this, "created", false);
+
+      _defineProperty(this, "destroyed", false);
+
+      _defineProperty(this, "mounted", false);
+
+      _defineProperty(this, "unmounted", false);
+
+      _defineProperty(this, "tree", []);
+
+      _defineProperty(this, "container", void 0);
+
+      _defineProperty(this, "componentRoot", void 0);
+
+      _defineProperty(this, "originalTag", void 0);
+
+      _defineProperty(this, "__executed_destroy", false);
+
+      _defineProperty(this, "__mountOptions", null);
+
+      _defineProperty(this, "__cancelDrawMonitor", void 0);
+
+      _defineProperty(this, "__executed_unmounted", false);
+
+      this.originalTag = originalTag;
+      this.tag = tag;
+      this.renderer = renderer;
+      this.attrs = attrs;
+      this.parentProxy = parent;
+      this.delivered = delivered || (parent === null || parent === void 0 ? void 0 : parent.delivered) || Object.create(null);
+
+      {
+        defineProperty(this, 'tree', []);
+      }
+    }
+
+    update(attrs, children) {
+      this.attrs = attrs;
+
+      this._update(attrs, children);
+    }
+
+    destroy() {
+      if (this.__executed_destroy) {
+        return false;
+      }
+
+      this.__executed_destroy = true;
+      this.callHook('beforeDestroy');
+
+      this._destroy();
+
+      this.callHook('destroyed');
+      this.destroyed = true;
+      return true;
+    }
+
+    mount(mountOptions) {
+      if (this.__executed_destroy) {
+        return false;
+      }
+
+      if (!mountOptions) {
+        return false;
+      }
+
+      if (this.__mountOptions) {
+        return false;
+      }
+
+      this.__mountOptions = mountOptions;
+      this.callHook('beforeMount');
+      const result = exec(c => c && this.requestDraw(), () => {
+        const newMountOptions = this._mount(mountOptions);
+
+        this.__mountOptions = newMountOptions || mountOptions;
+        this.mounted = true;
+      });
+      this.__cancelDrawMonitor = result.stop;
+      complete(() => this.callHook('mounted'));
+      return true;
+    }
+
+    unmount() {
+      if (!this.mounted) {
+        return false;
+      }
+
+      if (this.__executed_unmounted) {
+        return false;
+      }
+
+      this.__executed_unmounted = true;
+      this.callHook('beforeUnmount');
+
+      this._unmount();
+
+      this.callHook('unmounted');
+      this.unmounted = true;
+      return true;
+    }
+
+    redraw() {
+      if (this.__executed_destroy) {
+        return;
+      }
+
+      if (!this.mounted) {
+        return;
+      }
+
+      const mountOptions = this.__mountOptions;
+
+      if (!mountOptions) {
+        return;
+      }
+
+      if (this.__cancelDrawMonitor) {
+        this.__cancelDrawMonitor();
+      }
+
+      this.callHook('beforeDraw');
+      const result = exec(c => c && this.requestDraw(), () => this._redraw(mountOptions));
+      this.__cancelDrawMonitor = result.stop;
+      complete(() => this.callHook('drawn'));
+    }
+
+  }
+
+  class NodeProxy extends BaseProxy {
+    constructor(originalTag, tag, attrs, children, parent, delivered) {
+      super(parent.renderer, originalTag, tag, attrs, parent, delivered);
+
+      _defineProperty(this, "container", void 0);
+
+      _defineProperty(this, "componentRoot", void 0);
+
+      this.container = parent.container;
+      this.componentRoot = parent.componentRoot;
+    }
+
+    requestDraw() {
+      if (!this.mounted) {
+        return;
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.container.markDraw(this);
+    }
+
+    callHook(id) {}
+
+  }
+
+  function createPlaceholder(renderer) {
+    const node = renderer.createPlaceholder();
+    return createMountedNode({
+      tag: null,
+      node
+    });
+  }
+
+  function createItem(renderer, mountOptions, source) {
+    if (!source) {
+      return createPlaceholder(renderer);
+    }
+
+    const {
+      proxy
+    } = source;
+    proxy.mount(mountOptions);
+    return createMountedNode({ ...source,
+      node: undefined,
+      proxy
+    });
+  }
+
+  function createList(renderer, mountOptions, source) {
+    if (source.length) {
+      return source.map(it => createItem(renderer, mountOptions, it));
+    }
+
+    return [createPlaceholder(renderer)];
+  }
+
+  function createAll(renderer, mountOptions, source) {
+    if (!source.length) {
+      return [createPlaceholder(renderer)];
+    }
+
+    return source.map(item => Array.isArray(item) ? createList(renderer, mountOptions, item) : createItem(renderer, mountOptions, item));
   }
 
   function* getNodes(tree) {
@@ -1847,9 +2292,8 @@
     }
 
     const {
-      children,
       node,
-      component
+      proxy
     } = tree;
 
     if (node) {
@@ -1857,193 +2301,39 @@
       return;
     }
 
-    if (component) {
-      yield* getNodes(component.tree);
-      return;
+    if (proxy) {
+      yield* getNodes(proxy.tree);
     }
-
-    yield* getNodes(children);
   }
 
-  function unmount(iRender, tree) {
-    if (Array.isArray(tree)) {
-      tree.forEach(e => unmount(iRender, e));
+  function unmount(renderer, tree) {
+    if (!tree) {
       return;
     }
 
-    const {
-      component,
-      children,
-      node,
-      ref
-    } = tree;
+    if (Array.isArray(tree)) {
+      tree.forEach(e => unmount(renderer, e));
+      return;
+    }
+
     recoveryMountedNode(tree);
 
-    if (component) {
-      setRef(ref, component.exposed, true);
-      component.unmount();
+    if (tree.proxy) {
+      const {
+        proxy
+      } = tree;
+      proxy.unmount();
       return;
     }
 
-    if (node) {
-      setRef(ref, node, true);
-      iRender.removeNode(node);
+    if (tree.node) {
+      const {
+        node
+      } = tree;
+      renderer.removeNode(node);
     }
 
-    unmount(iRender, children);
-  }
-
-  function createValue$1(iRender, source, value) {
-    let {
-      ref
-    } = source;
-
-    if (iRender.isNode(value)) {
-      setRef(ref, value);
-      return createMountedNode({ ...source,
-        value,
-        node: value,
-        children: [],
-        component: undefined
-      });
-    }
-
-    const type = typeof value;
-    let node;
-
-    if (type === 'bigint' || type === 'boolean' || type === 'number' || type === 'string' || type === 'symbol' || value instanceof RegExp) {
-      node = iRender.createText(String(value));
-    } else if (value instanceof Date) {
-      node = iRender.createText(value.toISOString());
-    } else if (type === 'object' && value) {
-      node = iRender.createText(String(value));
-    }
-
-    if (!node) {
-      node = iRender.createPlaceholder();
-    }
-
-    setRef(ref, node);
-    return createMountedNode({ ...source,
-      value,
-      node,
-      component: undefined,
-      children: []
-    });
-  }
-
-  function createAll(iRender, source) {
-    if (!source.length) {
-      return [createMountedNode({
-        tag: null,
-        node: iRender.createPlaceholder(),
-        component: undefined,
-        children: []
-      })];
-    }
-
-    return source.map(item => Array.isArray(item) ? createList(iRender, item) : createItem(iRender, item));
-  }
-
-  function createList(iRender, source) {
-    if (source.length) {
-      return source.map(it => createItem(iRender, it));
-    }
-
-    return [createMountedNode({
-      tag: null,
-      node: iRender.createPlaceholder(),
-      component: undefined,
-      children: []
-    })];
-  }
-
-  function createItem(iRender, source) {
-    var _source$children;
-
-    const {
-      tag,
-      ref,
-      component
-    } = source;
-
-    if (!tag) {
-      const node = iRender.createPlaceholder();
-      setRef(ref, node);
-      return createMountedNode({
-        tag: null,
-        node,
-        component: undefined,
-        children: []
-      });
-    }
-
-    if (isDeliver(tag)) {
-      return createMountedNode({ ...source,
-        node: undefined,
-        component: undefined,
-        children: createAll(iRender, source.children)
-      });
-    }
-
-    const ltag = typeof tag !== 'string' ? '' : tag.toLowerCase();
-
-    if (typeof tag !== 'string' || ltag === Container) {
-      if (!component) {
-        return createMountedNode({ ...source,
-          node: undefined,
-          component: undefined,
-          children: createAll(iRender, source.children)
-        });
-      }
-
-      component.mount();
-      setRef(ref, component.exposed);
-      return createMountedNode({ ...source,
-        node: undefined,
-        component,
-        children: []
-      });
-    }
-
-    if (ltag === Value) {
-      let {
-        value
-      } = source;
-
-      if (isValue(value)) {
-        value = value();
-      }
-
-      return createValue$1(iRender, source, value);
-    }
-
-    if (ltag.substr(0, 5) === 'neep:' || ltag === 'template') {
-      return createMountedNode({ ...source,
-        node: undefined,
-        component: undefined,
-        children: createAll(iRender, source.children)
-      });
-    }
-
-    const node = iRender.createElement(tag);
-    setRef(ref, node);
-    let children = [];
-
-    if ((_source$children = source.children) === null || _source$children === void 0 ? void 0 : _source$children.length) {
-      children = createAll(iRender, source.children);
-
-      for (const it of getNodes(children)) {
-        iRender.insertNode(node, it);
-      }
-    }
-
-    iRender.updateProps(node, source.props || {});
-    return createMountedNode({ ...source,
-      node,
-      component: undefined,
-      children
-    });
+    unmount(renderer, tree.children);
   }
 
   function getLastNode(tree) {
@@ -2051,21 +2341,11 @@
       return getLastNode(tree[tree.length - 1]);
     }
 
-    const {
-      component,
-      children,
-      node
-    } = tree;
-
-    if (node) {
-      return node;
+    if (tree.node) {
+      return tree.node;
     }
 
-    if (component) {
-      return getLastNode(component.tree);
-    }
-
-    return getLastNode(children);
+    return getLastNode(tree.proxy.tree);
   }
 
   function getFirstNode(tree) {
@@ -2073,51 +2353,38 @@
       return getFirstNode(tree[0]);
     }
 
-    const {
-      component,
-      children,
-      node
-    } = tree;
-
-    if (node) {
-      return node;
+    if (tree.node) {
+      return tree.node;
     }
 
-    if (component) {
-      return getFirstNode(component.tree);
-    }
-
-    return getFirstNode(children[0]);
+    return getFirstNode(tree.proxy.tree);
   }
 
-  function replace(iRender, newTree, oldTree) {
+  function replace(renderer, newTree, oldTree) {
     const next = getFirstNode(oldTree);
 
     if (!next) {
       return newTree;
     }
 
-    const parent = iRender.getParent(next);
+    const parentNode = renderer.getParent(next);
 
-    if (!parent) {
+    if (!parentNode) {
       return newTree;
     }
 
     for (const it of getNodes(newTree)) {
-      iRender.insertNode(parent, it, next);
+      renderer.insertNode(parentNode, it, next);
     }
 
-    unmount(iRender, oldTree);
+    unmount(renderer, oldTree);
     return newTree;
   }
 
-  function updateList(iRender, source, tree) {
+  function updateList(renderer, mountOptions, source, tree) {
     if (!source.length) {
-      const node = createItem(iRender, {
-        tag: null,
-        children: []
-      });
-      return [replace(iRender, node, tree)];
+      const node = createPlaceholder(renderer);
+      return [replace(renderer, node, tree)];
     }
 
     if (!Array.isArray(tree)) {
@@ -2129,34 +2396,34 @@
     const mountedMap = new Map();
 
     for (const src of source) {
-      const index = list.findIndex(it => it.tag === src.tag && it.key === src.key);
+      const index = list.findIndex(it => it.tag === src.tag && it.key === src.key && it.proxy === src.proxy);
 
       if (index >= 0) {
         const old = list[index];
-        const item = updateItem(iRender, src, old);
+        const item = updateItem(renderer, mountOptions, src, old);
         mountedMap.set(old, item);
         newList.push(item);
         list.splice(index, 1);
       } else {
-        const item = createItem(iRender, src);
+        const item = createItem(renderer, mountOptions, src);
         newList.push(item);
       }
     }
 
     if (!mountedMap.size) {
-      return replace(iRender, newList, list);
+      return replace(renderer, newList, list);
     }
 
-    unmount(iRender, list);
+    unmount(renderer, list);
     tree = tree.filter(t => mountedMap.has(t));
-    const last = getLastNode(tree[tree.length - 1]);
-    const parent = iRender.getParent(last);
+    const last = getLastNode(tree.map(t => mountedMap.get(t)).filter(Boolean));
+    const parentNode = renderer.getParent(last);
 
-    if (!parent) {
+    if (!parentNode) {
       return newList;
     }
 
-    let next = iRender.nextNode(last);
+    let next = renderer.nextNode(last);
 
     for (let i = newList.length - 1; i >= 0; i--) {
       const item = newList[i];
@@ -2168,7 +2435,7 @@
         }
       } else {
         for (const it of getNodes(item)) {
-          iRender.insertNode(parent, it, next);
+          renderer.insertNode(parentNode, it, next);
         }
       }
 
@@ -2178,7 +2445,11 @@
     return newList;
   }
 
-  function updateAll(iRender, source, tree) {
+  function updateAll(renderer, mountOptions, source, tree) {
+    if (source.length === 0) {
+      return replace(renderer, createAll(renderer, mountOptions, []), tree);
+    }
+
     let index = 0;
     let length = Math.min(source.length, tree.length);
     const list = [];
@@ -2187,9 +2458,9 @@
       const src = source[index];
 
       if (Array.isArray(src)) {
-        list.push(updateList(iRender, src, tree[index]));
+        list.push(updateList(renderer, mountOptions, src, tree[index]));
       } else {
-        list.push(updateItem(iRender, src, tree[index]));
+        list.push(updateItem(renderer, mountOptions, src, tree[index]));
       }
     }
 
@@ -2197,26 +2468,26 @@
 
     if (tree.length > index) {
       for (; index < length; index++) {
-        unmount(iRender, tree[index]);
+        unmount(renderer, tree[index]);
       }
     }
 
     if (source.length > index) {
       const last = getLastNode(list[list.length - 1]);
-      const parent = iRender.getParent(last);
-      const next = iRender.nextNode(last);
+      const parentNode = renderer.getParent(last);
+      const next = renderer.nextNode(last);
 
       for (; index < length; index++) {
         const src = source[index];
-        const item = Array.isArray(src) ? createList(iRender, src) : createItem(iRender, src);
+        const item = Array.isArray(src) ? createList(renderer, mountOptions, src) : createItem(renderer, mountOptions, src);
         list.push(item);
 
-        if (!parent) {
+        if (!parentNode) {
           continue;
         }
 
         for (const it of getNodes(item)) {
-          iRender.insertNode(parent, it, next);
+          renderer.insertNode(parentNode, it, next);
         }
       }
     }
@@ -2224,129 +2495,516 @@
     return list;
   }
 
-  function updateItem(iRender, source, tree) {
+  function updateItem(renderer, mountOptions, source, tree) {
+    if (!source) {
+      if (Array.isArray(tree)) {
+        if (tree.length === 1 && tree[0].tag === null) {
+          return tree[0];
+        }
+      } else if (tree.tag === null) {
+        return tree;
+      }
+
+      return replace(renderer, createPlaceholder(renderer), tree);
+    }
+
     if (Array.isArray(tree)) {
-      const index = tree.findIndex(it => it.tag === source.tag && it.component === source.component);
+      const index = tree.findIndex(it => it.tag === source.tag && it.proxy === source.proxy);
 
       if (index < 0) {
-        return replace(iRender, createItem(iRender, source), tree);
+        return replace(renderer, createItem(renderer, mountOptions, source), tree);
       }
 
       const all = tree;
       [tree] = tree.splice(index, 1);
-      unmount(iRender, all);
+      unmount(renderer, all);
     }
 
-    const {
-      tag,
-      component
-    } = source;
-    const ref = source.ref !== tree.ref && source.ref || undefined;
+    if (source.proxy) {
+      const {
+        proxy
+      } = source;
 
-    if (tag !== tree.tag || component !== tree.component) {
-      return replace(iRender, createItem(iRender, source), tree);
-    }
+      if (proxy !== tree.proxy) {
+        return replace(renderer, createItem(renderer, mountOptions, source), tree);
+      }
 
-    if (isDeliver(tag)) {
       return createMountedNode({ ...source,
         node: undefined,
-        component: undefined,
-        children: updateAll(iRender, source.children, tree.children)
+        proxy
       }, tree.id);
     }
 
-    if (!tag) {
+    if (tree.proxy || source.tag !== tree.tag) {
+      return replace(renderer, createItem(renderer, mountOptions, source), tree);
+    }
+
+    if (source.tag === undefined) {
       return tree;
     }
 
-    const ltag = typeof tag !== 'string' ? '' : tag.toLowerCase();
+    return replace(renderer, createItem(renderer, mountOptions, source), tree);
+  }
 
-    if (typeof tag !== 'string' || ltag === Container) {
-      if (!component) {
-        return createMountedNode({ ...source,
-          node: undefined,
-          component: undefined,
-          children: updateAll(iRender, source.children, tree.children)
-        }, tree.id);
-      }
-
-      setRef(ref, component.exposed);
-      return createMountedNode({ ...source,
-        node: undefined,
-        component,
-        children: []
-      }, tree.id);
+  function draw(renderer, mountOptions, source, tree) {
+    if (!tree) {
+      return createAll(renderer, mountOptions, source);
     }
 
-    if (ltag === Value) {
-      let {
+    return updateAll(renderer, mountOptions, source, tree);
+  }
+
+  class DeliverProxy extends NodeProxy {
+    get content() {
+      return this.tree;
+    }
+
+    constructor(originalTag, tag, props, children, parent) {
+      super(originalTag, tag, props, children, parent, Object.create(parent.delivered));
+
+      _defineProperty(this, "__valueObject", void 0);
+
+      _defineProperty(this, "__nodes", void 0);
+
+      const {
         value
-      } = source;
-
-      if (isValue(value)) {
-        value = value();
-      }
-
-      if (tree.value === value) {
-        setRef(ref, tree.node);
-        return createMountedNode({ ...tree,
-          ...source,
-          value,
-          children: []
-        }, tree.id);
-      }
-
-      return replace(iRender, createValue$1(iRender, source, value), tree);
+      } = props;
+      this.__valueObject = value;
+      Reflect.defineProperty(this.delivered, tag[deliverKeySymbol], {
+        configurable: true,
+        enumerable: true,
+        get: () => {
+          markRead(this, 'value');
+          return this.__valueObject;
+        }
+      });
+      this.__nodes = convert(this, children);
+      this.created = true;
     }
 
-    if (ltag.substr(0, 5) === 'neep:' || ltag === 'template') {
-      return createMountedNode({ ...source,
-        node: undefined,
-        component: undefined,
-        children: updateAll(iRender, source.children, tree.children)
-      }, tree.id);
-    }
-
-    const {
-      node
-    } = tree;
-    setRef(ref, node);
-    let children = [];
-
-    if (!source.children.length && tree.children.length) {
-      unmount(iRender, tree.children);
-    } else if (source.children.length && tree.children.length) {
-      children = updateAll(iRender, source.children, tree.children);
-    } else if (source.children.length && !tree.children.length) {
-      children = createAll(iRender, source.children);
-
-      for (const it of getNodes(children)) {
-        iRender.insertNode(node, it);
+    _update({
+      value
+    }, children) {
+      if (this.__valueObject !== value) {
+        this.__valueObject = value;
+        markChange(this, 'value');
       }
+
+      this.__nodes = convert(this, children, this.__nodes);
+      this.requestDraw();
     }
 
-    iRender.updateProps(node, source.props || {});
-    return createMountedNode({ ...tree,
-      ...source,
-      children
-    }, tree.id);
+    _destroy() {
+      destroy(this.__nodes);
+    }
+
+    _mount(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this.__nodes);
+    }
+
+    _redraw(mountOptions) {
+      const {
+        renderer,
+        __nodes,
+        tree
+      } = this;
+      this.tree = draw(renderer, mountOptions, __nodes, tree);
+    }
+
+    _unmount() {
+      unmount(this.renderer, this.tree);
+    }
+
   }
 
-  function draw(iRender, source, tree) {
-    if (tree) {
-      return updateAll(iRender, source, tree);
+  let delayedRefresh = 0;
+  const objectSet = new Set();
+
+  function wait$1(obj) {
+    if (delayedRefresh <= 0) {
+      return false;
     }
 
-    return createAll(iRender, source);
+    objectSet.add(obj);
+    return true;
   }
 
-  function getSlots(iRender, children, slots, native = false) {
+  function run$1() {
+    if (delayedRefresh > 0) {
+      return;
+    }
+
+    const list = [...objectSet];
+    objectSet.clear();
+    list.forEach(o => o.refresh());
+  }
+
+  async function asyncRefresh(f) {
+    try {
+      delayedRefresh++;
+      return await f();
+    } finally {
+      delayedRefresh--;
+      run$1();
+    }
+  }
+
+  function refresh(f, async) {
+    if (async) {
+      return asyncRefresh(f);
+    }
+
+    try {
+      delayedRefresh++;
+      return f();
+    } finally {
+      delayedRefresh--;
+      run$1();
+    }
+  }
+
+  function createEmit(emitter, omitNames = []) {
+    const emit = (name, p, options) => refresh(() => {
+      const cancelable = Boolean(options === null || options === void 0 ? void 0 : options.cancelable);
+      const {
+        target
+      } = emitter;
+      let defaultPrevented = true;
+      const eventInfo = {
+        get target() {
+          return target;
+        },
+
+        get cancelable() {
+          return cancelable;
+        },
+
+        get defaultPrevented() {
+          return defaultPrevented;
+        },
+
+        get prevented() {
+          return defaultPrevented;
+        },
+
+        preventDefault() {
+          defaultPrevented = false;
+        },
+
+        prevent() {
+          defaultPrevented = false;
+        }
+
+      };
+      const events = emitter.events[name];
+
+      if (!events) {
+        return defaultPrevented;
+      }
+
+      for (const event of events) {
+        event(p, eventInfo);
+      }
+
+      return defaultPrevented;
+    });
+
+    emit.omit = (...names) => createEmit(emitter, [...omitNames, ...names]);
+
+    Reflect.defineProperty(emit, 'names', {
+      get: () => {
+        markRead(createEmit, 'names');
+        return [...emitter.names].filter(t => !omitNames.includes(t));
+      },
+      configurable: true
+    });
+    return emit;
+  }
+
+  class EventEmitter {
+    get names() {
+      markRead(this, 'names');
+      return [...this._names];
+    }
+
+    constructor() {
+      _defineProperty(this, "_names", new Set());
+
+      _defineProperty(this, "events", Object.create(null));
+
+      _defineProperty(this, "emit", createEmit(this));
+
+      _defineProperty(this, "on", void 0);
+
+      _defineProperty(this, "target", void 0);
+
+      _defineProperty(this, "__propsEvents", Object.create(null));
+
+      _defineProperty(this, "__eventMap", Object.create(null));
+
+      _defineProperty(this, "__propsEmitEvents", Object.create(null));
+
+      _defineProperty(this, "__propsEmitEvent", void 0);
+
+      const names = this._names;
+      const eventSet = this.events;
+
+      const on = (name, listener) => {
+        var _event;
+
+        function fn(p, event) {
+          try {
+            listener(p, event);
+          } catch (e) {
+            printError(e);
+          }
+        }
+
+        let event = eventSet[name];
+
+        if (!((_event = event) === null || _event === void 0 ? void 0 : _event.size)) {
+          event = new Set();
+          event.add(fn);
+          eventSet[name] = event;
+          names.add(name);
+          markChange(this, 'names');
+        } else {
+          event.add(fn);
+        }
+
+        let removed = false;
+        return () => {
+          if (removed) {
+            return;
+          }
+
+          removed = true;
+
+          if (!event) {
+            return;
+          }
+
+          event.delete(fn);
+
+          if (event.size) {
+            return;
+          }
+
+          names.delete(name);
+          markChange(this, 'names');
+        };
+      };
+
+      this.on = on;
+    }
+
+    updateInProps(props) {
+      const oldPropsEvents = this.__propsEvents;
+      const oldEventNames = new Set(Object.keys(oldPropsEvents));
+
+      for (const [entName, fn] of getEvents(props)) {
+        if (oldEventNames.has(entName)) {
+          oldEventNames.delete(entName);
+          const [olfFn, cl] = oldPropsEvents[entName] || [];
+
+          if (olfFn === fn) {
+            continue;
+          }
+
+          if (cl) {
+            cl();
+          }
+        }
+
+        oldPropsEvents[entName] = [fn, this.on(entName, fn)];
+      }
+
+      for (const entName of oldEventNames) {
+        const e = oldPropsEvents[entName];
+
+        if (!e) {
+          continue;
+        }
+
+        e[1]();
+        delete oldPropsEvents[entName];
+      }
+
+      const eventMap = this.__eventMap;
+      const oldEventMapNames = new Set(Object.keys(eventMap));
+
+      for (const [entName, fn] of getEventsMap(props)) {
+        if (oldEventMapNames.has(entName)) {
+          oldEventMapNames.delete(entName);
+          const [olfFn, cl] = eventMap[entName] || [];
+
+          if (olfFn === fn) {
+            continue;
+          }
+
+          if (cl) {
+            cl();
+          }
+        }
+
+        eventMap[entName] = [fn, this.on(entName, fn)];
+      }
+
+      for (const entName of oldEventMapNames) {
+        const e = eventMap[entName];
+
+        if (!e) {
+          continue;
+        }
+
+        e[1]();
+        delete eventMap[entName];
+      }
+
+      const oldEmitEvents = this.__propsEmitEvents;
+      const eventsFn = getEmitFn(props);
+
+      if (eventsFn !== this.__propsEmitEvent) {
+        this.__propsEmitEvent = eventsFn;
+
+        for (const entName of [...Object.keys(oldEmitEvents)]) {
+          const e = oldEmitEvents[entName];
+
+          if (!e) {
+            continue;
+          }
+
+          e();
+          delete oldEmitEvents[entName];
+        }
+
+        if (!eventsFn) {
+          return;
+        }
+
+        const {
+          names
+        } = eventsFn;
+
+        if (!Array.isArray(names)) {
+          return;
+        }
+
+        for (const n of names) {
+          oldEmitEvents[n] = this.on(n, p => eventsFn(n, p));
+        }
+
+        return;
+      }
+
+      if (!eventsFn) {
+        return;
+      }
+
+      const oldNames = new Set(Object.keys(oldEmitEvents));
+      const names = eventsFn.names || [];
+
+      for (const n of names) {
+        if (!n) {
+          continue;
+        }
+
+        oldNames.delete(n);
+
+        if (oldNames.has(n)) {
+          continue;
+        }
+
+        oldEmitEvents[n] = this.on(n, p => eventsFn(n, p));
+      }
+
+      for (const entName of oldNames) {
+        const e = oldEmitEvents[entName];
+
+        if (!e) {
+          continue;
+        }
+
+        e();
+        delete oldEmitEvents[entName];
+      }
+    }
+
+  }
+
+  function* getEvents(p) {
+    if (!p) {
+      return;
+    }
+
+    for (const k of Object.keys(p)) {
+      const fn = p[k];
+
+      if (typeof fn !== 'function') {
+        continue;
+      }
+
+      if (k.substr(0, 3) !== 'on:') {
+        continue;
+      }
+
+      const entName = k.substr(3);
+
+      if (!entName) {
+        continue;
+      }
+
+      yield [entName, fn];
+    }
+  }
+
+  function* getEventsMap(p) {
+    if (!p) {
+      return;
+    }
+
+    const events = p['n:on'];
+
+    if (!events) {
+      return;
+    }
+
+    if (typeof events === 'object') {
+      return;
+    }
+
+    for (const k of Object.keys(p)) {
+      const fn = p[k];
+
+      if (typeof fn !== 'function') {
+        continue;
+      }
+
+      yield [k, fn];
+    }
+  }
+
+  function getEmitFn(p) {
+    if (!p) {
+      return;
+    }
+
+    let eventsFn = p === null || p === void 0 ? void 0 : p['n:on'];
+
+    if (typeof eventsFn !== 'function') {
+      return;
+    }
+
+    return eventsFn;
+  }
+
+  function getSlots(renderer, children, slots, native = false) {
     const nativeList = [];
 
     for (const it of children) {
       if (Array.isArray(it)) {
         const list = Object.create(null);
-        nativeList.push(getSlots(iRender, it, list, native));
+        nativeList.push(getSlots(renderer, it, list, native));
 
         for (const k of Reflect.ownKeys(list)) {
           if (k in slots) {
@@ -2360,9 +3018,9 @@
       }
 
       if (isElement(it) && it.slot === undefined) {
-        if (typeof it.tag === 'function' && it.tag[typeSymbol] === 'simple' && it.execed || it.tag === Template) {
+        if (isSimpleComponent(it.tag) && it.execed || it.tag === Template) {
           const list = Object.create(null);
-          nativeList.push(getSlots(iRender, it.children, list, native));
+          nativeList.push(getSlots(renderer, it.children, list, native));
 
           for (const k of Reflect.ownKeys(list)) {
             const node = { ...it,
@@ -2381,7 +3039,7 @@
       }
 
       if (native) {
-        if (iRender.isNode(it)) {
+        if (renderer.isNode(it)) {
           nativeList.push(it);
           continue;
         }
@@ -2391,7 +3049,7 @@
           continue;
         }
 
-        if (it.tag !== SlotRender && it.tag !== Template) {
+        if (it.tag !== Render && it.tag !== Template) {
           nativeList.push(it);
           continue;
         }
@@ -2401,7 +3059,7 @@
       const el = isElement(it) ? { ...it,
         slot: undefined,
         props: { ...it.props,
-          slot: undefined
+          'n:slot': undefined
         }
       } : it;
 
@@ -2415,17 +3073,72 @@
     return nativeList;
   }
 
-  function renderSlots(list, ...props) {
+  function setSlot(slots, name, list) {
+    Reflect.defineProperty(slots, name, {
+      get() {
+        markRead(slots, name);
+        return list;
+      },
+
+      enumerable: true,
+      configurable: true
+    });
+    markChange(slots, name);
+    return list;
+  }
+
+  function setSlots(children, slots, oldChildren) {
+    if (!slots) {
+      const slots = Object.create(null);
+
+      for (const k of Reflect.ownKeys(children)) {
+        slots[k] = children[k];
+      }
+
+      return slots;
+    }
+
+    for (const name of Reflect.ownKeys(slots)) {
+      if (name in children) {
+        continue;
+      }
+
+      setSlot(slots, name);
+    }
+
+    if (!oldChildren) {
+      for (const name of Reflect.ownKeys(children)) {
+        const list = children[name];
+        setSlot(slots, name, list);
+      }
+
+      return slots;
+    }
+
+    for (const name of Reflect.ownKeys(children)) {
+      const list = children[name];
+
+      if (equal(list, oldChildren[name])) {
+        continue;
+      }
+
+      setSlot(slots, name, list);
+    }
+
+    return slots;
+  }
+
+  function renderSlot(list, argv) {
     return list.map(it => {
       if (Array.isArray(it)) {
-        return renderSlots(it, ...props);
+        return renderSlot(it, argv);
       }
 
       if (!isElement(it)) {
         return it;
       }
 
-      if (it.tag !== SlotRender) {
+      if (it.tag !== Render) {
         return { ...it,
           slot: undefined
         };
@@ -2445,51 +3158,50 @@
         return children;
       }
 
-      return render(...props);
+      return render(argv);
     });
   }
 
-  function createSlots(name, list) {
-    const slot = (...props) => ({
-      [objectTypeSymbol]: objectTypeSymbolElement,
-      tag: ScopeSlot,
-      children: renderSlots(list, ...props),
-      inserted: true,
-      label:  [`[${name}]`, '#00F']
-    });
-
-    slot.children = list;
-    return slot;
+  function getSlot(slots, name, isSimple) {
+    return isSimple || name in slots ? slots[name] : setSlot(slots, name);
   }
 
-  function setSlots(children, slots = Object.create(null), oldChildren) {
-    for (const k of Reflect.ownKeys(slots)) {
-      if (k in children) {
-        continue;
-      }
-
-      delete slots[k];
+  function createSlotApi(slots, isSimple = false) {
+    function slotApi(name = 'default', argv = {}) {
+      const list = getSlot(slots, name, isSimple);
+      return {
+        [objectTypeSymbol]: objectTypeSymbolElement,
+        tag: ScopeSlot,
+        children: list ? renderSlot(list, argv) : [],
+        inserted: true,
+        slot: name,
+        isDefault: !list
+      };
     }
 
-    if (!oldChildren) {
-      for (const k of Reflect.ownKeys(children)) {
-        slots[k] = createSlots(k, children[k]);
-      }
+    slotApi.has = (name = 'default') => Boolean(getSlot(slots, name, isSimple));
 
-      return slots;
+    return slotApi;
+  }
+
+  const constructors = [];
+
+  function initContext(context, entity) {
+    for (const constructor of constructors) {
+      constructor(context, entity);
     }
 
-    for (const k of Reflect.ownKeys(children)) {
-      const list = children[k];
+    return context;
+  }
 
-      if (equal(list, oldChildren[k])) {
-        continue;
-      }
+  function addContextConstructor(constructor) {
+    constructors.push(safeify(constructor));
+  }
 
-      slots[k] = createSlots(k, list);
-    }
-
-    return slots;
+  function getDelivered(delivered, deliver) {
+    assert(isDeliverComponent(deliver), 'The `deliver` is not a DeliverComponent.', 'deliver');
+    const value = delivered[deliver[deliverKeySymbol]];
+    return value === undefined ? deliver[deliverDefaultSymbol] : value;
   }
 
   const components = Object.create(null);
@@ -2498,7 +3210,7 @@
     components[name] = component;
   }
 
-  function findComponent(tag, components$1) {
+  function findComponent(tag, components$1, native) {
     if (!tag) {
       return null;
     }
@@ -2507,11 +3219,33 @@
       return tag;
     }
 
-    if (tag === 'template') {
+    if (/^core:/i.test(tag)) {
+      let ltag = tag.toLowerCase();
+
+      if (ltag === Container) {
+        return ltag;
+      }
+
+      if (ltag === ScopeSlot) {
+        return ltag;
+      }
+
+      if (ltag === Render) {
+        return ltag;
+      }
+
+      if (ltag === Slot) {
+        return native ? 'slot' : ScopeSlot;
+      }
+
+      return Fragment;
+    }
+
+    if (tag === Fragment) {
       return tag;
     }
 
-    if (/^neep:.+/i.test(tag)) {
+    if (tag === 'slot') {
       return tag;
     }
 
@@ -2526,133 +3260,56 @@
     return components[tag] || tag;
   }
 
-  function getChildren(children, args) {
-    if (children.length !== 1) {
-      return children;
-    }
-
-    const [fn] = children;
-
-    if (typeof fn !== 'function') {
-      return children;
-    }
-
-    return fn(...args);
-  }
-
-  function replaceNode(node, slots, components, native, isRoot) {
-    var _node$props;
-
-    if (Array.isArray(node)) {
-      return node.map(n => replaceNode(n, slots, components, native, isRoot));
-    }
-
-    if (!isElement(node)) {
-      return node;
-    }
-
-    let {
-      children,
-      props
-    } = node;
-    let tag = findComponent(node.tag, components);
-
-    if (tag === SlotRender && isRoot) {
-      return null;
-    }
-
-    if (tag === Slot) {
-      tag = native ? 'slot' : ScopeSlot;
-    }
-
-    if (tag !== ScopeSlot) {
-      return { ...node,
-        tag,
-        children: replaceNode(children, slots, components, native, isRoot)
-      };
-    }
-
-    if (node.tag === ScopeSlot && node.inserted) {
-      return node;
-    }
-
-    const args = (props === null || props === void 0 ? void 0 : props.argv) && [props.argv] || Array.isArray(props === null || props === void 0 ? void 0 : props.args) && (props === null || props === void 0 ? void 0 : props.args.length) && props.args || [{}];
-    const slotName = ((_node$props = node.props) === null || _node$props === void 0 ? void 0 : _node$props.name) || 'default';
-    const slot = slots[slotName];
-
-    if (typeof slot === 'function') {
-      return { ...node,
-        ...slot(...args)
-      };
-    }
-
-    const label =  [`[${slotName}]`, '#00F'];
-    return { ...node,
-      tag: ScopeSlot,
-      label,
-      children: replaceNode(getChildren(children, args), slots, components, native, false)
-    };
-  }
-
   function getComponents(...components) {
     return components.filter(Boolean);
   }
 
-  function execSimple(nObject, delivered, node, tag, components, children) {
-    if (node.execed) {
-      return node;
+  function getNodeArray(result) {
+    if (Array.isArray(result)) {
+      return result;
     }
 
-    const {
-      iRender
-    } = nObject;
+    if (!isElement(result)) {
+      return [result];
+    }
+
+    if (result.tag !== Fragment) {
+      return [result];
+    }
+
+    return result.children;
+  }
+
+  function execSimple(normalizeAuxiliaryObject, node, tag, components, children) {
     const slotMap = Object.create(null);
-    getSlots(iRender, children, slotMap);
+    getSlots(normalizeAuxiliaryObject.renderer, children, slotMap);
     const slots = setSlots(slotMap);
     const event = new EventEmitter();
     event.updateInProps(node.props);
-    const props = { ...node.props
-    };
-    const context = initContext({
-      slots,
-      created: false,
-      parent: nObject.exposed,
-
-      delivered(deliver) {
-        return getDelivered(delivered, deliver);
-      },
-
-      children: new Set(),
+    const {
+      refresh,
+      delivered,
+      simpleParent
+    } = normalizeAuxiliaryObject;
+    const result = tag({ ...node.props
+    }, initContext({
+      isShell: true,
+      slot: createSlotApi(slots, true),
+      parent: simpleParent,
+      delivered: deliver => getDelivered(delivered, deliver),
       childNodes: children,
-
-      refresh(f) {
-        nObject.refresh(f);
-      },
-
+      refresh,
       emit: event.emit
-    });
-
-    {
-      getLabel();
-    }
-
-    const result = tag(props, context);
-    let label;
-
-    {
-      label = getLabel();
-    }
-
-    const nodes = init(nObject, delivered, renderNode(nObject.iRender, result, context, tag[renderSymbol]), slots, getComponents(...components, tag[componentsSymbol]), false);
+    }));
+    const nodes = init(normalizeAuxiliaryObject, getNodeArray(result), slots, getComponents(...components, tag[componentsSymbol]), false, true);
     return { ...node,
       tag,
       execed: true,
-      children: Array.isArray(nodes) ? nodes : [nodes],
-      label
+      children: Array.isArray(nodes) ? nodes : [nodes]
     };
   }
 
-  function getSlotRenderFn(nObject, delivered, children, slots, components, native) {
+  function getSlotRenderFn(normalizeAuxiliaryObject, children, slots, components, native) {
     if (children.length !== 1) {
       return null;
     }
@@ -2665,7 +3322,7 @@
 
     const {
       slotRenderFnList
-    } = nObject;
+    } = normalizeAuxiliaryObject;
     const fn = slotRenderFnList.get(renderFn);
 
     if (fn) {
@@ -2673,42 +3330,43 @@
     }
 
     const newFn = function (...p) {
-      return init(nObject, delivered, renderFn.call(this, ...p), slots, components, native);
+      return init(normalizeAuxiliaryObject, renderFn.call(this, ...p), slots, components, native, false);
     };
 
     slotRenderFnList.set(renderFn, newFn);
     return newFn;
   }
 
-  function exec$1(nObject, delivered, node, slots, components, native) {
+  function exec$1(node, normalizeAuxiliaryObject, slots, components, native, simpleSlot) {
+    var _node$props;
+
     if (Array.isArray(node)) {
-      return node.map(n => exec$1(nObject, delivered, n, slots, components, native));
+      return node.map(n => exec$1(n, normalizeAuxiliaryObject, slots, components, native, simpleSlot));
     }
 
     if (!isElement(node)) {
       return node;
     }
 
-    let {
-      tag,
-      children
-    } = node;
-
-    if (isDeliver(tag)) {
-      const newDelivered = Object.create(delivered);
-      Reflect.defineProperty(newDelivered, tag[deliverKeySymbol], {
-        configurable: true,
-        enumerable: true,
-        value: node.props ? node.props.value : undefined
-      });
-      return { ...node,
-        tag,
-        children: children.map(child => exec$1(nObject, newDelivered, child, slots, components, native))
-      };
+    if (node.tag === ScopeSlot && node.inserted) {
+      return node;
     }
 
-    if (tag === SlotRender) {
-      const slotRenderFn = getSlotRenderFn(nObject, delivered, children, slots, components, native);
+    const {
+      children
+    } = node;
+    const tag = findComponent(node.tag, components, native);
+
+    if (isSimpleComponent(tag)) {
+      if (node.execed) {
+        return node;
+      }
+
+      return execSimple(normalizeAuxiliaryObject, node, tag, components, children.map(n => exec$1(n, normalizeAuxiliaryObject, slots, components, native, simpleSlot)));
+    }
+
+    if (tag === Render) {
+      const slotRenderFn = getSlotRenderFn(normalizeAuxiliaryObject, children, slots, components, native);
 
       if (slotRenderFn) {
         return { ...node,
@@ -2717,158 +3375,1022 @@
       }
     }
 
-    if (typeof tag !== 'function' || tag[typeSymbol] !== 'simple') {
+    if (tag !== ScopeSlot) {
       return { ...node,
         tag,
-        children: children.map(n => exec$1(nObject, delivered, n, slots, components, native))
+        children: children.map(n => exec$1(n, normalizeAuxiliaryObject, slots, components, native, simpleSlot))
       };
     }
 
-    return execSimple(nObject, delivered, node, tag, components, children);
+    const {
+      props
+    } = node;
+    const args = (props === null || props === void 0 ? void 0 : props.argv) || {};
+    const slotName = ((_node$props = node.props) === null || _node$props === void 0 ? void 0 : _node$props.name) || 'default';
+    const slot = simpleSlot || slotName in slots ? slots[slotName] : setSlot(slots, slotName);
+    const el = {
+      [objectTypeSymbol]: objectTypeSymbolElement,
+      props,
+      key: node.key,
+      tag: ScopeSlot,
+      inserted: true,
+      slot: slotName,
+      isDefault: !slot,
+      children: slot ? renderSlot(slot, args) : getChildren(children, args).map(n => exec$1(n, normalizeAuxiliaryObject, slots, components, native, simpleSlot))
+    };
+    return el;
   }
 
-  function getItem(node) {
-    if (Array.isArray(node)) {
-      return node.map(getItem);
+  function getChildren(children, args) {
+    if (children.length !== 1) {
+      return children;
     }
 
-    if (isElement(node)) {
-      return node;
+    const [fn] = children;
+
+    if (typeof fn !== 'function') {
+      return children;
     }
 
-    if (node === undefined || node === null) {
-      return {
-        [objectTypeSymbol]: objectTypeSymbolElement,
-        tag: null,
-        key: undefined,
-        children: []
+    return getNodeArray(fn(args));
+  }
+
+  function init(normalizeAuxiliaryObject, node, slots, components, native, simpleSlot) {
+    return refresh(() => postpone(() => exec$1(node, normalizeAuxiliaryObject, slots, components, native, simpleSlot)));
+  }
+
+  function normalize(proxy, slotRenderFnList, refresh, result, components = proxy.tag[componentsSymbol] || null) {
+    return init({
+      renderer: proxy.renderer,
+      refresh,
+      slotRenderFnList,
+      delivered: proxy.delivered,
+      simpleParent: proxy.entity
+    }, getNodeArray(result), proxy.slots, getComponents(components), Boolean(proxy.isNative), false);
+  }
+
+  function getText(value) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    if (value instanceof RegExp) {
+      return String(value);
+    }
+
+    return String(value);
+  }
+
+  function getNodeArray$1(result) {
+    if (!isElement(result)) {
+      return [result];
+    }
+
+    if (result.tag !== Fragment) {
+      return [result];
+    }
+
+    return result.children;
+  }
+
+  class ValueProxy extends NodeProxy {
+    get content() {
+      return this.tree;
+    }
+
+    set value(v) {
+      const k = v !== this.__value;
+      this.__value = v;
+
+      if (k) {
+        markChange(this, 'value');
+      }
+    }
+
+    get value() {
+      markRead(this, 'value');
+      let v = this.__value;
+
+      while (isValue(v)) {
+        v = v();
+      }
+
+      return v;
+    }
+
+    constructor(attrs, parent) {
+      super(null, null, attrs, [], parent);
+
+      _defineProperty(this, "__value", void 0);
+
+      _defineProperty(this, "text", void 0);
+
+      _defineProperty(this, "isValue", void 0);
+
+      _defineProperty(this, "__nodes", void 0);
+
+      _defineProperty(this, "src", void 0);
+
+      _defineProperty(this, "__render", void 0);
+
+      _defineProperty(this, "__refreshing", false);
+
+      _defineProperty(this, "__needRefresh", false);
+
+      const {
+        value
+      } = attrs;
+      this.__value = value;
+
+      {
+        defineProperty(this, 'text', undefined);
+        defineProperty(this, 'isValue', isValue(value));
+      }
+
+      const slots = Object.create(null);
+      const normalizeAuxiliaryObject = {
+        renderer: this.renderer,
+        refresh: () => this.refresh(),
+        slotRenderFnList: new WeakMap(),
+        delivered: this.delivered,
+        simpleParent: undefined
       };
+      this.__render = monitor(changed => changed && this.refresh(), () => {
+        let {
+          value
+        } = this;
+
+        if (isElement(value) || Array.isArray(value)) {
+          this.__nodes = convert(this, init(normalizeAuxiliaryObject, getNodeArray$1(value), slots, [], false, false), this.__nodes);
+          return true;
+        }
+
+        if (this.__nodes) {
+          destroy(this.__nodes);
+          this.__nodes = undefined;
+        } else if (this.src === value) {
+          return false;
+        }
+
+        this.src = value;
+        return true;
+      });
+      this.created = true;
+      this.refresh();
+    }
+
+    refresh() {
+      if (this.destroyed) {
+        return;
+      }
+
+      this.__needRefresh = true;
+
+      if (!this.created) {
+        return;
+      }
+
+      if (this.__refreshing) {
+        return;
+      }
+
+      this.__refreshing = true;
+      let needDraw = false;
+
+      while (this.__needRefresh && !wait$1(this)) {
+        this.__needRefresh = false;
+        needDraw = this.__render() || needDraw;
+
+        if (this.destroyed) {
+          return;
+        }
+      }
+
+      this.__refreshing = false;
+
+      if (!needDraw) {
+        return;
+      }
+
+      if (wait$1(this)) {
+        return;
+      }
+
+      if (!this.mounted) {
+        return;
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      if (this.unmounted) {
+        return;
+      }
+
+      this.requestDraw();
+    }
+
+    _update({
+      value
+    }) {
+      this.value = value;
+
+      {
+        this.isValue = isValue(value);
+      }
+    }
+
+    _destroy() {
+      this.__render.stop();
+
+      const {
+        __nodes
+      } = this;
+
+      if (!__nodes) {
+        return;
+      }
+
+      destroy(__nodes);
+    }
+
+    _mount(mountOptions) {
+      const {
+        renderer,
+        __nodes,
+        src
+      } = this;
+
+      if (__nodes) {
+        this.tree = draw(renderer, mountOptions, __nodes);
+        return;
+      }
+
+      if (renderer.isNode(src)) {
+        this.tree = [createMountedNode({
+          node: src
+        })];
+        return;
+      }
+
+      const text = getText(src);
+
+      {
+        this.text = text;
+      }
+
+      const node = typeof text === 'string' ? createMountedNode({
+        node: renderer.createText(text)
+      }) : createPlaceholder(renderer);
+      this.tree = [node];
+    }
+
+    _redraw(mountOptions) {
+      const {
+        renderer,
+        __nodes,
+        src
+      } = this;
+
+      if (__nodes) {
+        this.tree = draw(renderer, mountOptions, __nodes, this.tree);
+        return;
+      }
+
+      if (renderer.isNode(src)) {
+        this.tree = [createMountedNode({
+          node: src
+        })];
+
+        {
+          this.text = undefined;
+        }
+
+        return;
+      }
+
+      const text = getText(src);
+
+      {
+        this.text = text;
+      }
+
+      const node = typeof text === 'string' ? createMountedNode({
+        node: renderer.createText(text)
+      }) : createPlaceholder(renderer);
+      this.tree = replace(renderer, [node], this.tree);
+    }
+
+    _unmount() {
+      const {
+        renderer,
+        tree
+      } = this;
+      unmount(renderer, tree);
+    }
+
+  }
+
+  class GroupProxy extends NodeProxy {
+    get content() {
+      return this.tree;
+    }
+
+    constructor(tag, children, parent) {
+      super(tag, tag, {}, children, parent);
+
+      _defineProperty(this, "__nodes", void 0);
+
+      this.__nodes = convert(this, children);
+    }
+
+    _update(props, children) {
+      this.__nodes = convert(this, children, this.__nodes);
+      this.requestDraw();
+    }
+
+    _destroy() {
+      destroy(this.__nodes);
+    }
+
+    _mount(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this.__nodes);
+    }
+
+    _redraw(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this.__nodes, this.tree);
+    }
+
+    _unmount() {
+      unmount(this.renderer, this.tree);
+    }
+
+  }
+
+  function updateData(props, data) {
+    const oldKeys = new Set(Object.keys(data));
+
+    for (const k in props) {
+      if (k.substr(0, 5) !== 'data:') {
+        continue;
+      }
+
+      const key = k.substr(5);
+
+      if (!key) {
+        continue;
+      }
+
+      oldKeys.delete(key);
+      data[key] = props[key];
+    }
+
+    const dataset = props['n:data'];
+
+    if (dataset && typeof dataset === 'object') {
+      for (const key in dataset) {
+        if (!key) {
+          continue;
+        }
+
+        oldKeys.delete(key);
+        data[key] = dataset[key];
+      }
+    }
+
+    for (const key of oldKeys) {
+      delete data[key];
+    }
+  }
+
+  class RefProxy extends BaseProxy {
+    get exposed() {
+      return this.__exposed;
+    }
+
+    setExposed(t) {
+      if (this.destroyed) {
+        return;
+      }
+
+      const ref = this.__ref;
+
+      if (typeof ref !== 'function') {
+        this.__exposed = t;
+        return;
+      }
+
+      const old = this.__exposed;
+      this.__exposed = t;
+      ref(t, old, this.entity);
+    }
+
+    constructor(renderer, originalTag, tag, attrs, parent, delivered) {
+      super(renderer, originalTag, tag, attrs, parent, delivered);
+
+      _defineProperty(this, "__exposed", void 0);
+
+      _defineProperty(this, "__ref", void 0);
+
+      _defineProperty(this, "events", void 0);
+
+      _defineProperty(this, "entity", void 0);
+
+      _defineProperty(this, "data", Object.create(null));
+
+      updateData(attrs, this.data);
+      const events = new EventEmitter();
+      const entity = this.createEntity(events);
+      events.target = entity;
+      this.entity = entity;
+      this.events = events;
+      const ref = attrs['n:ref'];
+
+      if (typeof ref === 'function') {
+        this.__ref = ref;
+        ref(undefined, undefined, entity, true);
+      }
+    }
+
+    update(attrs, children) {
+      updateData(attrs, this.data);
+      const ref = attrs['n:ref'];
+      const oldRef = this.__ref;
+
+      if (ref !== oldRef) {
+        if (typeof ref === 'function') {
+          ref(this.__exposed);
+        } else if (oldRef) {
+          this.__ref = undefined;
+        }
+      }
+
+      super.update(attrs, children);
+    }
+
+    destroy() {
+      if (!super.destroy()) {
+        return false;
+      }
+
+      const ref = this.__ref;
+
+      if (typeof ref !== 'function') {
+        return true;
+      }
+
+      ref(undefined, this.__exposed, this.entity, false);
+      return true;
+    }
+
+  }
+
+  class ElementProxy extends RefProxy {
+    constructor(originalTag, tag, props, children, parent) {
+      super(parent.renderer, originalTag, tag, props, parent);
+
+      _defineProperty(this, "container", void 0);
+
+      _defineProperty(this, "componentRoot", void 0);
+
+      _defineProperty(this, "props", void 0);
+
+      _defineProperty(this, "__nodes", void 0);
+
+      _defineProperty(this, "node", void 0);
+
+      _defineProperty(this, "content", []);
+
+      _defineProperty(this, "__elementTagData", void 0);
+
+      this.container = parent.container;
+      this.componentRoot = parent.componentRoot;
+
+      {
+        defineProperty(this, 'content', []);
+      }
+
+      this.props = props;
+      this.events.updateInProps(props);
+      this.__nodes = convert(this, children);
+
+      if (typeof tag === 'string') {
+        this.__elementTagData = tag;
+      } else {
+        this.__elementTagData = tag[componentValueSymbol];
+      }
+    }
+
+    requestDraw() {
+      if (!this.mounted) {
+        return;
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.container.markDraw(this);
+    }
+
+    callHook(id) {}
+
+    createEntity(events) {
+      const cfg = {
+        data: {
+          configurable: true,
+          value: this.data
+        },
+        exposed: {
+          configurable: true,
+          get: () => this.exposed
+        },
+        on: {
+          configurable: true,
+          value: events.on
+        },
+        emit: {
+          configurable: true,
+          value: events.emit
+        }
+      };
+      const entity = Object.create(null, cfg);
+      return entity;
+    }
+
+    _update(props, children) {
+      this.props = props;
+      this.events.updateInProps(props);
+      this.__nodes = convert(this, children, this.__nodes);
+      this.requestDraw();
+    }
+
+    _destroy() {
+      if (this.destroyed) {
+        return;
+      }
+
+      this.destroyed = true;
+      destroy(this.__nodes);
+    }
+
+    _mount(mountOptions) {
+      if (this.node) {
+        return;
+      }
+
+      const {
+        renderer,
+        __elementTagData: tag,
+        props,
+        __nodes
+      } = this;
+      const node = renderer.createElement(tag, props, mountOptions);
+
+      if (!node) {
+        return;
+      }
+
+      this.node = node;
+      this.setExposed(node);
+      const subMountOptions = renderer.getMountOptions(node, mountOptions) || mountOptions;
+
+      if (__nodes) {
+        const content = draw(renderer, subMountOptions, __nodes);
+        this.content = content;
+
+        for (const it of getNodes(content)) {
+          renderer.insertNode(node, it);
+        }
+      }
+
+      this.tree = [createMountedNode({
+        node
+      })];
+      renderer.updateProps(node, tag, props, this.events.emit, subMountOptions);
+      return subMountOptions;
+    }
+
+    _redrawChildren(mountOptions) {
+      const {
+        renderer,
+        __nodes,
+        content,
+        node
+      } = this;
+
+      if (!node) {
+        return;
+      }
+
+      if (!__nodes.length && content.length) {
+        unmount(renderer, content);
+        this.content = [];
+      } else if (__nodes.length && content.length) {
+        this.content = draw(renderer, mountOptions, __nodes, content);
+      } else if (__nodes.length && !content.length) {
+        const newTree = draw(renderer, mountOptions, __nodes);
+        this.content = newTree;
+
+        for (const it of getNodes(newTree)) {
+          renderer.insertNode(node, it);
+        }
+      }
+    }
+
+    _redraw(mountOptions) {
+      this._redrawChildren(mountOptions);
+
+      const {
+        renderer,
+        __elementTagData: tag,
+        node,
+        props
+      } = this;
+
+      if (!node) {
+        return;
+      }
+
+      renderer.updateProps(node, tag, props || {}, this.events.emit, mountOptions);
+    }
+
+    _unmount() {
+      const {
+        renderer,
+        tree,
+        node
+      } = this;
+
+      if (!node) {
+        return;
+      }
+
+      renderer.removeNode(node);
+      unmount(renderer, tree);
+    }
+
+  }
+
+  function getNodeArray$2(result) {
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (!isElement(result)) {
+      return [result];
+    }
+
+    if (result.tag !== Fragment) {
+      return [result];
+    }
+
+    return result.children;
+  }
+
+  class ShellProxy extends RefProxy {
+    get content() {
+      return this.tree;
+    }
+
+    requestDraw() {
+      if (!this.mounted) {
+        return;
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.container.markDraw(this);
+    }
+
+    callHook(id) {}
+
+    createEntity(events) {
+      const cfg = {
+        data: {
+          configurable: true,
+          value: this.data
+        },
+        exposed: {
+          configurable: true,
+          value: undefined
+        },
+        on: {
+          configurable: true,
+          value: events.on
+        },
+        emit: {
+          configurable: true,
+          value: events.emit
+        }
+      };
+      const entity = Object.create(null, cfg);
+      return entity;
+    }
+
+    constructor(originalTag, tag, props, children, parent) {
+      super(parent.renderer, originalTag, tag, props, parent);
+
+      _defineProperty(this, "props", void 0);
+
+      _defineProperty(this, "childNodes", void 0);
+
+      _defineProperty(this, "src", void 0);
+
+      _defineProperty(this, "slots", Object.create(null));
+
+      _defineProperty(this, "lastSlots", void 0);
+
+      _defineProperty(this, "__render", void 0);
+
+      _defineProperty(this, "container", void 0);
+
+      _defineProperty(this, "componentRoot", void 0);
+
+      _defineProperty(this, "__refreshing", false);
+
+      _defineProperty(this, "__needRefresh", false);
+
+      _defineProperty(this, "__delayedRefresh", 0);
+
+      _defineProperty(this, "_nodes", []);
+
+      this.container = parent.container;
+      this.componentRoot = parent.componentRoot;
+      this.props = props;
+      this.childNodes = children;
+      const {
+        slots
+      } = this;
+
+      const _this = this;
+
+      const {
+        delivered
+      } = this;
+
+      const refresh = f => {
+        this.refresh(f);
+      };
+
+      const event = this.events;
+      const context = initContext({
+        isShell: true,
+
+        delivered(deliver) {
+          return getDelivered(delivered, deliver);
+        },
+
+        slot: createSlotApi(slots),
+        refresh,
+
+        get childNodes() {
+          return _this.childNodes;
+        },
+
+        emit: event.emit
+      });
+      const normalizeAuxiliaryObject = {
+        renderer: this.renderer,
+        refresh,
+        slotRenderFnList: new WeakMap(),
+        delivered: this.delivered,
+        simpleParent: undefined
+      };
+      this.__render = monitor(changed => changed && this.refresh(), () => {
+        const props = { ...this.props
+        };
+        event.updateInProps(props);
+        const result =  runShell(l => this.labels = l, () => tag(props, context));
+        return init(normalizeAuxiliaryObject, getNodeArray$2(result), slots, [], false, false);
+      });
+      this.created = true;
+      this.refresh();
+      this._nodes = convert(this, this.__render());
+    }
+
+    refresh(f) {
+      if (typeof f === 'function') {
+        try {
+          this.__delayedRefresh++;
+          return f();
+        } finally {
+          this.__delayedRefresh--;
+
+          if (this.__delayedRefresh <= 0) {
+            this.refresh();
+          }
+        }
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.__needRefresh = true;
+
+      if (!this.created) {
+        return;
+      }
+
+      if (this.__refreshing) {
+        return;
+      }
+
+      this.__refreshing = true;
+      let nodes;
+
+      while (this.__needRefresh && !wait$1(this)) {
+        this.__needRefresh = false;
+        nodes = this.__render();
+
+        if (this.destroyed) {
+          return;
+        }
+      }
+
+      this.__refreshing = false;
+
+      if (!nodes) {
+        return;
+      }
+
+      this._nodes = convert(this, nodes, this._nodes);
+
+      if (wait$1(this)) {
+        return;
+      }
+
+      if (!this.mounted) {
+        return;
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      if (this.unmounted) {
+        return;
+      }
+
+      this.requestDraw();
+    }
+
+    _update(props, children) {
+      this.props = props;
+      const slots = Object.create(null);
+      getSlots(this.renderer, children, slots);
+      setSlots(slots, this.slots, this.lastSlots);
+      this.lastSlots = slots;
+      this.childNodes = children;
+      this.refresh();
+    }
+
+    _destroy() {
+      this.__render.stop();
+
+      destroy(this._nodes);
+    }
+
+    _mount(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this._nodes);
+    }
+
+    _redraw(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this._nodes, this.tree);
+    }
+
+    _unmount() {
+      unmount(this.renderer, this.tree);
+    }
+
+  }
+
+  function toElement(t) {
+    if (t === false || t === null || t === undefined) {
+      return null;
+    }
+
+    if (isElement(t)) {
+      return t;
     }
 
     return {
-      [objectTypeSymbol]: objectTypeSymbolElement,
-      key: undefined,
-      tag: Value,
-      value: node,
+      key: t,
+      props: {
+        value: t
+      },
       children: []
     };
   }
 
-  function renderNode(iRender, node, context, render) {
-    if (Array.isArray(node)) {
-      return node;
+  function destroy(tree) {
+    if (!tree) {
+      return;
     }
 
-    if (isElement(node)) {
-      if (node.tag === Fragment) {
-        return node.children.map(getItem);
-      }
-
-      return [node];
+    if (Array.isArray(tree)) {
+      tree.forEach(t => destroy(t));
+      return;
     }
 
-    if (!node || !render || iRender.isNode(node)) {
-      return [node];
-    }
-
-    if (typeof node !== 'object') {
-      return [node];
-    }
-
-    const list = render(node, context);
-
-    if (Array.isArray(list)) {
-      return list;
-    }
-
-    return [list];
-  }
-
-  function init(nObject, delivered, node, slots, components, native) {
-    return refresh(() => postpone(() => exec$1(nObject, delivered, replaceNode(node, slots, components, native, true).map(getItem), slots, components, native)));
-  }
-
-  function normalize(nObject, result) {
     const {
-      component
-    } = nObject;
-    return init(nObject, nObject.delivered, renderNode(nObject.iRender, result, nObject.context, component[renderSymbol]), nObject.slots, getComponents(component[componentsSymbol]), Boolean(nObject.native));
-  }
+      proxy
+    } = tree;
 
-  function createExposed(obj) {
-    const cfg = {
-      $parent: {
-        configurable: true,
-        get: () => {
-          var _obj$parent;
-
-          return (_obj$parent = obj.parent) === null || _obj$parent === void 0 ? void 0 : _obj$parent.exposed;
-        }
-      },
-      $component: {
-        configurable: true,
-        value: null
-      },
-      $isContainer: {
-        configurable: true,
-        value: false
-      },
-      $created: {
-        configurable: true,
-        get: () => obj.created
-      },
-      $destroyed: {
-        configurable: true,
-        get: () => obj.destroyed
-      },
-      $mounted: {
-        configurable: true,
-        get: () => obj.mounted
-      },
-      $unmounted: {
-        configurable: true,
-        get: () => obj.unmounted
-      }
-    };
-    const exposed = Object.create(null, cfg);
-    return exposed;
-  }
-
-  let completeList;
-
-  function setCompleteList(list) {
-    completeList = list;
-  }
-
-  function complete(it) {
-    if (!completeList) {
-      it();
-    } else {
-      completeList.push(it);
+    if (proxy) {
+      return proxy.destroy();
     }
   }
 
-  function createEntity(obj) {
+  class SlotProxy extends NodeProxy {
+    get content() {
+      return this.tree;
+    }
+
+    constructor(children, parent, isDefault) {
+      super(ScopeSlot, ScopeSlot, {}, [], parent);
+
+      _defineProperty(this, "__nodes", void 0);
+
+      this.__nodes = convert(this, children);
+    }
+
+    _update(props, children) {
+      if (!this.mounted) {
+        return;
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.__nodes = convert(this, children, this.__nodes);
+      this.requestDraw();
+    }
+
+    _destroy() {
+      destroy(this.__nodes);
+    }
+
+    _mount(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this.__nodes);
+    }
+
+    _redraw(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this.__nodes, this.tree);
+    }
+
+    _unmount() {
+      unmount(this.renderer, this.tree);
+    }
+
+  }
+
+  const constructors$1 = [];
+
+  function initEntity(entity) {
+    for (const constructor of constructors$1) {
+      constructor(entity);
+    }
+
+    return entity;
+  }
+
+  function addEntityConstructor(constructor) {
+    constructors$1.push(safeify(constructor));
+  }
+
+  function createEntity(obj, events) {
+    var _obj$parentComponentP;
+
     const cfg = {
+      [objectTypeSymbol]: {
+        configurable: true,
+        value: objectTypeSymbolHookEntity
+      },
+      data: {
+        configurable: true,
+        value: obj.data
+      },
       exposed: {
         configurable: true,
         get: () => obj.exposed
       },
       parent: {
         configurable: true,
-        get: () => {
-          var _obj$parent2;
-
-          return (_obj$parent2 = obj.parent) === null || _obj$parent2 === void 0 ? void 0 : _obj$parent2.entity;
-        }
+        value: (_obj$parentComponentP = obj.parentComponentProxy) === null || _obj$parentComponentP === void 0 ? void 0 : _obj$parentComponentP.entity
       },
       component: {
         configurable: true,
-        value: null
-      },
-      isContainer: {
-        configurable: true,
-        value: false
+        value: obj.tag
       },
       created: {
         configurable: true,
@@ -2890,21 +4412,7 @@
         configurable: true,
         value: Object.create(null)
       },
-      $_valueIndex: {
-        configurable: true,
-        value: 0,
-        writable: true
-      },
-      $_values: {
-        configurable: true,
-        value: []
-      },
-      $_serviceIndex: {
-        configurable: true,
-        value: 0,
-        writable: true
-      },
-      $_services: {
+      $_useHookValues: {
         configurable: true,
         value: []
       },
@@ -2930,143 +4438,198 @@
       },
       on: {
         configurable: true,
-        value: obj.on
+        value: events.on
       },
       emit: {
         configurable: true,
-        value: obj.emit
-      },
-      config: {
-        configurable: true,
-        value: obj.config
+        value: events.emit
       }
     };
     const entity = Object.create(null, cfg);
     return initEntity(entity);
   }
 
-  class EntityObject {
-    constructor(iRender, parent, delivered = (parent === null || parent === void 0 ? void 0 : parent.delivered) || Object.create(null), container) {
-      _defineProperty(this, "slotRenderFnList", new WeakMap());
+  const disabledKey = new Set([':', '@', '#', '*', '!', '%', '^', '~', '&', '?', '+', '.', '(', ')', '[', ']', '{', '}', '<', '>']);
 
-      _defineProperty(this, "events", new EventEmitter());
+  function filter(k) {
+    if (typeof k !== 'string') {
+      return true;
+    }
 
-      _defineProperty(this, "emit", this.events.emit);
+    if (disabledKey.has(k[0])) {
+      return false;
+    }
 
-      _defineProperty(this, "on", this.events.on);
+    if (k.substr(0, 2) === 'n:') {
+      return false;
+    }
 
-      _defineProperty(this, "eventCancelHandles", new Set());
+    if (k.substr(0, 3) === 'on:') {
+      return false;
+    }
 
-      _defineProperty(this, "iRender", void 0);
+    return true;
+  }
 
-      _defineProperty(this, "components", Object.create(null));
+  function update(proxy, props, children) {
+    const {
+      props: propsObj,
+      isNative
+    } = proxy;
+    const newKeys = new Set(Object.keys(props).filter(filter));
+    proxy.propsDefined.forEach(k => newKeys.add(k));
 
-      _defineProperty(this, "config", Object.create(null));
+    for (const k of Object.keys(propsObj)) {
+      if (filter(k) && !newKeys.has(k)) {
+        delete propsObj[k];
+      }
+    }
 
-      _defineProperty(this, "parentDelivered", void 0);
+    for (const k of newKeys) {
+      propsObj[k] = props[k];
+    }
 
-      _defineProperty(this, "delivered", void 0);
+    proxy.events.updateInProps(props);
+    const slots = Object.create(null);
+    const childNodes = getSlots(proxy.renderer, children, slots, isNative);
+    setSlots(slots, proxy.slots, proxy.lastSlots);
+    proxy.lastSlots = slots;
 
-      _defineProperty(this, "exposed", createExposed(this));
+    if (!isNative) {
+      return;
+    }
 
-      _defineProperty(this, "entity", createEntity(this));
+    proxy.nativeNodes = convert(proxy, childNodes, proxy.nativeNodes);
 
-      _defineProperty(this, "parent", void 0);
+    if (!proxy.mounted) {
+      return;
+    }
 
-      _defineProperty(this, "native", void 0);
+    proxy.requestDraw();
+  }
 
-      _defineProperty(this, "created", false);
+  class ComponentProxy extends RefProxy {
+    callHook(id) {
+      callHook(id, this.entity);
+    }
 
-      _defineProperty(this, "destroyed", false);
+    constructor(originalTag, component, props, children, parent) {
+      super(parent.renderer, originalTag, component, props, parent);
 
-      _defineProperty(this, "mounted", false);
-
-      _defineProperty(this, "unmounted", false);
-
-      _defineProperty(this, "children", new Set());
-
-      _defineProperty(this, "tree", []);
+      _defineProperty(this, "isNative", false);
 
       _defineProperty(this, "container", void 0);
 
-      _defineProperty(this, "_render", () => []);
+      _defineProperty(this, "componentRoot", void 0);
 
-      _defineProperty(this, "_needRefresh", false);
+      _defineProperty(this, "children", new Set());
 
-      _defineProperty(this, "_delayedRefresh", 0);
+      _defineProperty(this, "emit", void 0);
 
-      _defineProperty(this, "_refreshing", false);
+      _defineProperty(this, "on", void 0);
 
-      _defineProperty(this, "_nodes", []);
+      _defineProperty(this, "components", Object.create(null));
+
+      _defineProperty(this, "props", void 0);
+
+      _defineProperty(this, "propsDefined", void 0);
+
+      _defineProperty(this, "slots", Object.create(null));
+
+      _defineProperty(this, "lastSlots", void 0);
+
+      _defineProperty(this, "nativeNodes", void 0);
+
+      _defineProperty(this, "parentComponentProxy", void 0);
+
+      _defineProperty(this, "_render", void 0);
+
+      _defineProperty(this, "_stopRender", void 0);
 
       _defineProperty(this, "childNodes", []);
 
-      _defineProperty(this, "__executed_destroy", false);
+      _defineProperty(this, "__refreshing", false);
 
-      _defineProperty(this, "__executed_mount", false);
+      _defineProperty(this, "__needRefresh", false);
 
-      _defineProperty(this, "__executed_mounted", false);
+      _defineProperty(this, "__delayedRefresh", 0);
 
-      _defineProperty(this, "_cancelDrawMonitor", void 0);
+      _defineProperty(this, "_nodes", []);
 
-      this.iRender = iRender;
-      this.parentDelivered = delivered;
-      this.delivered = Object.create(delivered);
+      this.container = parent.container;
+      this.componentRoot = this;
+      this.parentComponentProxy = parent.componentRoot;
+      const {
+        events
+      } = this;
+      this.emit = events.emit;
+      this.on = events.on;
+      Object.assign(this.components, component[componentsSymbol]);
+      const propsDefined = component[propsSymbol];
 
-      if (parent) {
-        this.parent = parent;
+      if (Array.isArray(propsDefined)) {
+        this.propsDefined = propsDefined;
+        this.props = createObject(propsDefined, null);
+      } else {
+        this.propsDefined = [];
+        this.props = encase(Object.create(null));
       }
 
-      this.container = container || this;
-    }
+      this._init();
 
-    get canRefresh() {
-      if (wait$1(this)) {
-        return false;
-      }
+      this.callHook('beforeCreate');
 
-      return !this._delayedRefresh;
-    }
+      this._update(props, children);
 
-    get needRefresh() {
-      if (wait$1(this)) {
-        return false;
-      }
+      const {
+        render,
+        nodes,
+        stopRender
+      } = this._initRender();
 
-      if (this._delayedRefresh) {
-        return false;
-      }
+      this._render = render;
+      this._stopRender = stopRender;
+      this._nodes = convert(this, nodes);
+      this.callHook('created');
+      this.created = true;
 
-      const needRefresh = this._needRefresh;
-      this._needRefresh = false;
-      return needRefresh;
-    }
-
-    requestDraw() {}
-
-    async asyncRefresh(f) {
-      try {
-        this._delayedRefresh++;
-        return await f();
-      } finally {
-        this._delayedRefresh--;
+      if (this.needRefresh) {
         this.refresh();
       }
     }
 
-    refresh(f, async) {
-      if (typeof f === 'function') {
-        if (async) {
-          return this.asyncRefresh(f);
-        }
+    createEntity(events) {
+      return createEntity(this, events);
+    }
 
+    _update(props, children) {
+      if (this.destroyed) {
+        return;
+      }
+
+      this.childNodes = children;
+      refresh(() => postpone(() => update(this, props, children)));
+    }
+
+    _destroy() {
+      this._stopRender();
+
+      destroy(this._nodes);
+    }
+
+    get needRefresh() {
+      return this.__needRefresh;
+    }
+
+    refresh(f) {
+      if (typeof f === 'function') {
         try {
-          this._delayedRefresh++;
+          this.__delayedRefresh++;
           return f();
         } finally {
-          this._delayedRefresh--;
+          this.__delayedRefresh--;
 
-          if (this._delayedRefresh <= 0) {
+          if (this.__delayedRefresh <= 0) {
             this.refresh();
           }
         }
@@ -3076,20 +4639,33 @@
         return;
       }
 
-      this._needRefresh = true;
+      this.__needRefresh = true;
 
       if (!this.created) {
         return;
       }
 
-      if (this._refreshing) {
+      if (this.__refreshing) {
         return;
       }
 
-      this._refreshing = true;
+      this.__refreshing = true;
       let nodes;
 
-      while (this.needRefresh) {
+      for (;;) {
+        if (wait$1(this)) {
+          break;
+        }
+
+        if (this.__delayedRefresh) {
+          break;
+        }
+
+        if (!this.__needRefresh) {
+          break;
+        }
+
+        this.__needRefresh = false;
         nodes = this._render();
 
         if (this.destroyed) {
@@ -3097,9 +4673,13 @@
         }
       }
 
-      this._refreshing = false;
+      this.__refreshing = false;
 
-      if (!this.canRefresh) {
+      if (wait$1(this)) {
+        return;
+      }
+
+      if (this.__delayedRefresh) {
         return;
       }
 
@@ -3124,302 +4704,111 @@
       this.requestDraw();
     }
 
-    callHook(id) {
-      callHook(id, this.entity);
-    }
-
-    _update(props, children) {
-      this.childNodes = children;
-    }
-
-    update(props, children) {
-      this._update(props, children);
-    }
-
-    _destroy() {}
-
-    destroy() {
-      if (this.__executed_destroy) {
-        return;
-      }
-
-      this.__executed_destroy = true;
-      this.callHook('beforeDestroy');
-
-      this._destroy();
-
-      this.callHook('destroyed');
-      this.destroyed = true;
-    }
-
-    _mount() {}
-
-    mount() {
-      if (this.__executed_destroy) {
-        return;
-      }
-
-      if (this.__executed_mount) {
-        return;
-      }
-
-      this.__executed_mount = true;
-      this.callHook('beforeMount');
-      const result = exec(c => c && this.requestDraw(), () => {
-        this._mount();
-
-        this.mounted = true;
-      });
-      this._cancelDrawMonitor = result.stop;
-      complete(() => this.callHook('mounted'));
-    }
-
-    _unmount() {}
-
-    unmount() {
-      if (!this.mounted) {
-        return;
-      }
-
-      if (this.__executed_mounted) {
-        return;
-      }
-
-      this.__executed_mounted = true;
-      this.callHook('beforeUnmount');
-
-      this._unmount();
-
-      this.callHook('unmounted');
-      this.unmounted = true;
-    }
-
-    _draw() {}
-
-    draw() {
-      if (this.__executed_destroy) {
-        return;
-      }
-
-      if (this._cancelDrawMonitor) {
-        this._cancelDrawMonitor();
-      }
-
-      this.callHook('beforeDraw');
-      const result = exec(c => c && this.requestDraw(), () => this._draw());
-      this._cancelDrawMonitor = result.stop;
-      complete(() => this.callHook('drawn'));
+    requestDraw() {
+      this.container.markDraw(this);
     }
 
   }
 
-  const disabledKey = new Set([':', '@', '#', '*', '!', '%', '^', '~', '&', '=', '+', '.', '(', ')', '[', ']', '{', '}', '<', '>']);
-
-  function filter(k) {
-    if (typeof k !== 'string') {
-      return true;
+  function getNodeArray$3(result) {
+    if (Array.isArray(result)) {
+      return result;
     }
 
-    if (disabledKey.has(k[0])) {
-      return false;
+    if (!isElement(result)) {
+      return [result];
     }
 
-    if (/^n[:-]/.test(k)) {
-      return false;
+    if (result.tag !== Fragment) {
+      return [result];
     }
 
-    if (/^on[:-]/.test(k)) {
-      return false;
-    }
-
-    return true;
+    return result.children;
   }
 
-  function update(nObject, props, children) {
-    const propsObj = nObject.props;
-    const newKeys = new Set(Reflect.ownKeys(props).filter(filter));
-
-    for (const k of Reflect.ownKeys(propsObj)) {
-      if (filter(k) && !newKeys.has(k)) {
-        delete propsObj[k];
-      }
-    }
-
-    for (const k of newKeys) {
-      propsObj[k] = props[k];
-    }
-
-    nObject.events.updateInProps(props);
-    const slots = Object.create(null);
+  function initRender(proxy) {
     const {
-      native
-    } = nObject;
-    const childNodes = getSlots(nObject.iRender, children, slots, Boolean(native));
-    setSlots(slots, nObject.slots, nObject.lastSlots);
-    nObject.lastSlots = slots;
-
-    if (!native) {
-      return;
-    }
-
-    nObject.nativeNodes = convert(nObject, childNodes, nObject.nativeNodes);
-
-    if (!nObject.mounted) {
-      return;
-    }
-
-    nObject.requestDraw();
-  }
-
-  function createContext(nObject) {
-    return initContext({
-      slots: nObject.slots,
+      tag,
+      props,
+      entity
+    } = proxy;
+    const context = initContext({
+      isShell: false,
+      slot: createSlotApi(proxy.slots),
+      expose: t => proxy.setExposed(t),
 
       get created() {
-        return nObject.created;
+        return proxy.created;
       },
 
       get parent() {
-        return nObject.parent.exposed;
+        var _proxy$parentComponen;
+
+        return (_proxy$parentComponen = proxy.parentComponentProxy) === null || _proxy$parentComponen === void 0 ? void 0 : _proxy$parentComponen.entity;
       },
 
       get children() {
-        return nObject.children;
+        return [...proxy.children].map(t => t.exposed);
       },
 
       get childNodes() {
-        return nObject.childNodes;
+        return proxy.childNodes;
       },
 
       get emit() {
-        return nObject.emit;
+        return proxy.emit;
       },
 
       delivered(deliver) {
-        return getDelivered(nObject.parentDelivered, deliver);
+        return getDelivered(proxy.delivered, deliver);
       },
 
       refresh(f) {
-        nObject.refresh(f);
+        proxy.refresh(f);
       }
 
-    }, nObject.entity);
-  }
-
-  function initRender(nObject) {
-    const {
-      component,
-      props,
-      context,
-      entity
-    } = nObject;
-
-    function refresh(changed) {
-      if (!changed) {
-        return;
-      }
-
-      nObject.refresh();
-    }
-
-    const result = exec(refresh, () => setCurrent(() => component(props, context), entity), {
-      resultOnly: true
-    });
-
-    if (typeof result === 'function') {
-      const render = monitor(refresh, () => normalize(nObject, result()));
-      return {
-        nodes: render(),
-        render,
-        stopRender: () => render.stop()
-      };
-    }
-
-    const render = monitor(refresh, () => normalize(nObject, setCurrent(() => component(props, context), entity)));
+    }, entity);
+    const renderFn = tag[componentValueSymbol];
+    const renderNode = typeof renderFn !== 'function' ? () => createTemplateElement(...proxy.childNodes) : () => runCurrent(entity,  l => proxy.labels = l, () => renderFn(props || {}, context));
+    const normalizeAuxiliaryObject = {
+      renderer: proxy.renderer,
+      refresh: f => proxy.refresh(f),
+      slotRenderFnList: new WeakMap(),
+      delivered: proxy.delivered,
+      simpleParent: proxy.entity
+    };
+    const components = proxy.tag[componentsSymbol];
+    const componentsList = components ? [components] : [];
+    const render = monitor(c => c && proxy.refresh(), () => init(normalizeAuxiliaryObject, getNodeArray$3(renderNode()), proxy.slots, componentsList, false, false));
     return {
-      nodes: exec(refresh, () => normalize(nObject, result), {
-        resultOnly: true
-      }),
+      nodes: render(),
       render,
       stopRender: () => render.stop()
     };
   }
 
-  class ComponentEntity extends EntityObject {
-    constructor(component, props, children, parent, delivered) {
-      var _this$iRender$createC, _this$iRender;
-
-      super(parent.iRender, parent, delivered, parent.container);
-
-      _defineProperty(this, "component", void 0);
-
-      _defineProperty(this, "props", encase(Object.create(null)));
-
-      _defineProperty(this, "slots", encase(Object.create(null)));
-
-      _defineProperty(this, "lastSlots", void 0);
-
-      _defineProperty(this, "_stopRender", void 0);
+  class RenderComponentProxy extends ComponentProxy {
+    constructor(...args) {
+      super(...args);
 
       _defineProperty(this, "nativeNodes", void 0);
 
-      _defineProperty(this, "shadowTree", []);
-
-      _defineProperty(this, "nativeTree", []);
-
-      _defineProperty(this, "_shadow", void 0);
-
-      _defineProperty(this, "context", void 0);
-
-      _defineProperty(this, "parent", void 0);
-
-      this.component = component;
-      Object.assign(this.config, component[configSymbol]);
-      Object.assign(this.components, component[componentsSymbol]);
-      Reflect.defineProperty(this.exposed, '$component', {
-        value: component,
-        enumerable: true,
-        configurable: true
-      });
-      [this.native, this._shadow] = component[typeSymbol] === 'native' && ((_this$iRender$createC = (_this$iRender = this.iRender).createComponent) === null || _this$iRender$createC === void 0 ? void 0 : _this$iRender$createC.call(_this$iRender)) || [];
-      this.parent = parent;
-      parent.children.add(this.exposed);
-      const context = createContext(this);
-      this.context = context;
-      this.callHook('beforeCreate');
-      this.childNodes = children;
-      refresh(() => postpone(() => update(this, props, children)));
-      const {
-        render,
-        nodes,
-        stopRender
-      } = initRender(this);
-      this._render = render;
-      this._stopRender = stopRender;
-      this._nodes = convert(this, nodes);
-      this.callHook('created');
-      this.created = true;
-
-      if (this._needRefresh) {
-        this.refresh();
-      }
+      _defineProperty(this, "childNodes", []);
     }
 
-    _update(props, children) {
-      if (this.destroyed) {
-        return;
-      }
+    get content() {
+      return this.tree;
+    }
 
-      this.childNodes = children;
-      refresh(() => postpone(() => update(this, props, children)));
+    _init() {}
+
+    _initRender() {
+      return initRender(this);
     }
 
     _destroy() {
-      if (this._stopRender) {
-        this._stopRender();
-      }
+      this._stopRender();
 
-      this.parent.children.delete(this.exposed);
       destroy(this._nodes);
     }
 
@@ -3427,184 +4816,366 @@
       this.container.markDraw(this);
     }
 
-    _draw() {
+    _redraw(mountOptions) {
       const {
-        nativeNodes,
-        iRender,
-        _shadow,
-        native
+        renderer,
+        _nodes
       } = this;
+      this.tree = draw(renderer, mountOptions, _nodes, this.tree);
+    }
 
-      if (!native || !nativeNodes || !_shadow) {
-        this.tree = draw(iRender, this._nodes, this.tree);
+    _mount(mountOptions) {
+      const {
+        renderer,
+        _nodes
+      } = this;
+      this.tree = draw(renderer, mountOptions, _nodes);
+    }
+
+    _unmount() {
+      const {
+        renderer
+      } = this;
+      unmount(renderer, this.tree);
+    }
+
+  }
+
+  function createResponsiveRender(proxy, func, components) {
+    const slotRenderFns = new WeakMap();
+    const render = monitor(c => c && proxy.refresh(), () => normalize(proxy, slotRenderFns, f => proxy.refresh(f), func(), components));
+    return {
+      nodes: render(),
+      render,
+      stopRender: () => render.stop()
+    };
+  }
+
+  function initRender$1(proxy) {
+    const {
+      tag,
+      props,
+      entity
+    } = proxy;
+    const context = initContext({
+      isShell: false,
+      slot: createSlotApi(proxy.slots),
+      expose: t => proxy.setExposed(t),
+
+      get created() {
+        return proxy.created;
+      },
+
+      get parent() {
+        var _proxy$parentComponen;
+
+        return (_proxy$parentComponen = proxy.parentComponentProxy) === null || _proxy$parentComponen === void 0 ? void 0 : _proxy$parentComponen.entity;
+      },
+
+      get children() {
+        return [...proxy.children].map(t => t.exposed);
+      },
+
+      get childNodes() {
+        return proxy.childNodes;
+      },
+
+      get emit() {
+        return proxy.emit;
+      },
+
+      delivered(deliver) {
+        return getDelivered(proxy.delivered, deliver);
+      },
+
+      refresh(f) {
+        proxy.refresh(f);
+      }
+
+    }, entity);
+
+    const refresh = changed => {
+      if (!changed) {
         return;
       }
 
-      this.shadowTree = draw(iRender, this._nodes, this.shadowTree);
-      this.nativeTree = draw(iRender, nativeNodes, this.nativeTree);
+      proxy.refresh();
+    };
+
+    const setLabel =  l => proxy.labels = l;
+    const result = exec(refresh, {
+      resultOnly: true
+    }, () => runCurrent(entity, setLabel, () => tag(props, context)));
+
+    if (typeof result === 'function') {
+      return createResponsiveRender(proxy, result);
     }
 
-    _mount() {
+    if (isRenderElement(result)) {
+      const {
+        children
+      } = result;
+
+      if ((children === null || children === void 0 ? void 0 : children.length) === 1 && typeof children[0] === 'function') {
+        return createResponsiveRender(proxy, children[0]);
+      }
+    }
+
+    if (isElement(result) && isRenderComponent(result.tag)) {
+      const {
+        tag
+      } = result;
+      const render = tag[componentValueSymbol];
+
+      if (typeof render === 'function') {
+        return createResponsiveRender(proxy, () => render(result.props || {}, context), result.tag[componentsSymbol] || null);
+      }
+    }
+
+    const normalizeRefresh = f => {
+      proxy.refresh(f);
+    };
+
+    const slotRenderFns = new WeakMap();
+    const render = monitor(refresh, () => normalize(proxy, slotRenderFns, normalizeRefresh, runCurrent(entity, setLabel, () => tag(props, context))));
+    return {
+      nodes: exec(refresh, () => normalize(proxy, slotRenderFns, normalizeRefresh, result), {
+        resultOnly: true
+      }),
+      render,
+      stopRender: () => render.stop()
+    };
+  }
+
+  class StandardComponentProxy extends ComponentProxy {
+    constructor(...args) {
+      super(...args);
+
+      _defineProperty(this, "content", []);
+
+      _defineProperty(this, "native", void 0);
+
+      _defineProperty(this, "shadowTree", []);
+
+      _defineProperty(this, "nativeTree", []);
+
+      _defineProperty(this, "_shadow", void 0);
+
+      _defineProperty(this, "childNodes", []);
+
+      _defineProperty(this, "__nativeTreeNountOptions", void 0);
+    }
+
+    _init() {
+      var _this$renderer$create, _this$renderer;
+
+      {
+        defineProperty(this, 'content', []);
+      }
+
+      if (!isNativeComponent(this.tag)) {
+        return;
+      }
+
+      const value = (_this$renderer$create = (_this$renderer = this.renderer).createComponent) === null || _this$renderer$create === void 0 ? void 0 : _this$renderer$create.call(_this$renderer);
+
+      if (!value) {
+        return;
+      }
+
+      [this.native, this._shadow] = value;
+    }
+
+    _initRender() {
+      return initRender$1(this);
+    }
+
+    _destroy() {
+      this._stopRender();
+
+      destroy(this._nodes);
+    }
+
+    requestDraw() {
+      this.container.markDraw(this);
+    }
+
+    _mount(mountOptions) {
       const {
         nativeNodes,
-        iRender,
+        renderer,
         _shadow,
         native,
         _nodes
       } = this;
 
       if (!native || !nativeNodes || !_shadow) {
-        this.tree = draw(iRender, _nodes);
+        this.tree = this.content = draw(renderer, mountOptions, _nodes);
         return;
       }
 
-      this.tree = draw(iRender, [{
-        tag: Value,
-        key: native,
-        value: native,
-        children: []
-      }]);
-      this.shadowTree = draw(iRender, _nodes);
+      this.tree = [createMountedNode({
+        node: native
+      })];
+      const subMountOptions = renderer.getMountOptions(_shadow, mountOptions) || mountOptions;
+      this.content = draw(renderer, subMountOptions, _nodes);
 
-      for (const it of getNodes(this.shadowTree)) {
-        iRender.insertNode(_shadow, it);
+      for (const it of getNodes(this.content)) {
+        renderer.insertNode(_shadow, it);
       }
 
-      this.nativeTree = draw(iRender, nativeNodes);
+      const nativeTreeNountOptions = renderer.getMountOptions(native, mountOptions) || mountOptions;
+      this.nativeTree = draw(renderer, nativeTreeNountOptions, nativeNodes);
 
       for (const it of getNodes(this.nativeTree)) {
-        iRender.insertNode(native, it);
+        renderer.insertNode(native, it);
       }
+
+      this.__nativeTreeNountOptions = nativeTreeNountOptions;
+      return subMountOptions;
+    }
+
+    _redraw(mountOptions) {
+      const {
+        nativeNodes,
+        renderer,
+        __nativeTreeNountOptions,
+        _nodes
+      } = this;
+      this.content = draw(renderer, mountOptions, _nodes, this.content);
+
+      if (!nativeNodes || !__nativeTreeNountOptions) {
+        this.tree = this.content;
+        return;
+      }
+
+      this.nativeTree = draw(renderer, __nativeTreeNountOptions, nativeNodes, this.nativeTree);
     }
 
     _unmount() {
       const {
-        iRender,
+        renderer,
         nativeTree
       } = this;
-      unmount(iRender, this.tree);
+      unmount(renderer, this.tree);
 
       if (!nativeTree) {
         return;
       }
 
-      unmount(iRender, nativeTree);
+      unmount(renderer, nativeTree);
     }
 
   }
 
-  function toElement(t) {
-    if (t === false || t === null || t === undefined) {
+  const recognizers = [];
+
+  function recognize(any) {
+    for (const recognizer of recognizers) {
+      const res = recognizer(any);
+
+      if (typeof res === 'function') {
+        return res;
+      }
+    }
+
+    return typeof any === 'function' ? any : null;
+  }
+
+  function addRecognizer(recognizer) {
+    recognizers.push(recognizer);
+  }
+
+  function createProxy(proxy, {
+    tag,
+    props,
+    children,
+    isDefault
+  }) {
+    if (tag === Container) {
+      return new ContainerProxy(tag, null, props, children, proxy);
+    }
+
+    if (tag === ScopeSlot) {
+      return new SlotProxy(children, proxy, isDefault);
+    }
+
+    if (tag === Fragment) {
+      return new GroupProxy(tag, children, proxy);
+    }
+
+    if (typeof tag === 'string') {
+      if (tag.substr(0, 5) === 'core:') {
+        return new GroupProxy(tag, children, proxy);
+      }
+
+      return new ElementProxy(tag, tag, props || {}, children, proxy);
+    }
+
+    const componentTag = recognize(tag);
+
+    if (typeof componentTag !== 'function') {
+      return new GroupProxy(tag, children, proxy);
+    }
+
+    if (isShellComponent(componentTag)) {
+      return new ShellProxy(tag, componentTag, props || {}, children, proxy);
+    }
+
+    if (isDeliverComponent(componentTag)) {
+      return new DeliverProxy(tag, componentTag, props || {}, children, proxy);
+    }
+
+    if (isContainerComponent(componentTag)) {
+      return new ContainerProxy(tag, componentTag, props, children, proxy);
+    }
+
+    if (isElementComponent(componentTag)) {
+      return new ElementProxy(tag, componentTag, props || {}, children, proxy);
+    }
+
+    if (isSimpleComponent(componentTag)) {
+      return new GroupProxy(tag, children, proxy);
+    }
+
+    if (isRenderComponent(componentTag)) {
+      return new RenderComponentProxy(tag, componentTag, props || {}, children, proxy);
+    }
+
+    return new StandardComponentProxy(tag, componentTag, props || {}, children, proxy);
+  }
+
+  function createItem$1(proxy, source) {
+    if (!source) {
       return null;
     }
 
-    if (isElement(t)) {
-      return t;
-    }
-
-    return {
-      [objectTypeSymbol]: objectTypeSymbolElement,
-      tag: Value,
-      key: t,
-      value: t,
-      children: []
-    };
-  }
-
-  function destroy(tree) {
-    if (Array.isArray(tree)) {
-      tree.forEach(t => destroy(t));
-      return;
-    }
-
-    const {
-      component
-    } = tree;
-
-    if (component) {
-      component.destroy();
-    }
-  }
-
-  function createItem$1(nObject, delivered, source) {
-    if (!source) {
+    if (!source.tag) {
+      const {
+        key,
+        props
+      } = source;
       return {
-        tag: null,
-        key: undefined,
-        children: []
+        key,
+        props,
+        proxy: new ValueProxy(source.props || {}, proxy)
       };
     }
 
     const {
-      tag
+      tag,
+      key,
+      props
     } = source;
-
-    if (!tag) {
-      return {
-        tag: null,
-        key: undefined,
-        children: []
-      };
-    }
-
-    if (isDeliver(tag)) {
-      const newDelivered = Object.create(delivered);
-      Reflect.defineProperty(newDelivered, tag[deliverKeySymbol], {
-        configurable: true,
-        enumerable: true,
-        value: source.props ? source.props.value : undefined
-      });
-      return { ...source,
-        delivered: newDelivered,
-        children: createAll$1(nObject, newDelivered, source.children)
-      };
-    }
-
-    if (typeof tag !== 'string') {
-      if (tag[typeSymbol] === 'simple') {
-        return { ...source,
-          children: createAll$1(nObject, delivered, source.children),
-          component: undefined
-        };
-      }
-
-      return { ...source,
-        children: [],
-        component: new ComponentEntity(tag, source.props || {}, source.children, nObject, delivered)
-      };
-    }
-
-    const ltag = tag.toLowerCase();
-
-    if (ltag === Container) {
-      var _source$props;
-
-      const type = source === null || source === void 0 ? void 0 : (_source$props = source.props) === null || _source$props === void 0 ? void 0 : _source$props.type;
-      const iRender = type ? getRender(type) : nObject.iRender;
-      return { ...source,
-        children: [],
-        component: new ContainerEntity(iRender, source.props || {}, source.children, nObject, delivered)
-      };
-    }
-
-    if (ltag === Value) {
-      return { ...source,
-        children: []
-      };
-    }
-
-    if (ltag.substr(0, 5) === 'neep:' || ltag === 'template') {
-      return { ...source,
-        children: createAll$1(nObject, delivered, source.children)
-      };
-    }
-
-    return { ...source,
-      children: createAll$1(nObject, delivered, source.children)
+    return {
+      tag,
+      key,
+      props,
+      proxy: createProxy(proxy, source)
     };
   }
 
-  function createAll$1(nObject, delivered, source) {
+  function createAll$1(proxy, source) {
     if (!Array.isArray(source)) {
       source = [source];
     }
@@ -3615,14 +5186,29 @@
 
     return source.map(item => {
       if (!Array.isArray(item)) {
-        return createItem$1(nObject, delivered, toElement(item));
+        return createItem$1(proxy, toElement(item));
       }
 
-      return [...recursive2iterable(item)].map(it => createItem$1(nObject, delivered, toElement(it)));
+      return item.flat(Infinity).map(it => createItem$1(proxy, toElement(it))).filter(Boolean);
     });
   }
 
-  function updateList$1(nObject, delivered, source, tree) {
+  function* recursive2iterable(list) {
+    if (!Array.isArray(list)) {
+      yield list;
+      return;
+    }
+
+    for (const it of list) {
+      yield* recursive2iterable(it);
+    }
+  }
+
+  function updateList$1(proxy, source, tree) {
+    if (!tree) {
+      tree = [];
+    }
+
     if (!Array.isArray(tree)) {
       tree = [tree];
     }
@@ -3639,10 +5225,19 @@
       const index = tree.findIndex(it => it.tag === node.tag && it.key === node.key);
 
       if (index >= 0) {
-        newList.push(updateItem$1(nObject, delivered, node, tree[index]));
+        const newNode = updateItem$1(proxy, node, tree[index]);
+
+        if (newNode) {
+          newList.push(newNode);
+        }
+
         tree.splice(index, 1);
       } else {
-        newList.push(createItem$1(nObject, delivered, node));
+        const newNode = createItem$1(proxy, node);
+
+        if (newNode) {
+          newList.push(newNode);
+        }
       }
     }
 
@@ -3650,30 +5245,26 @@
     return newList;
   }
 
-  function updateItem$1(nObject, delivered, source, tree) {
+  function updateItem$1(proxy, source, tree) {
     if (!tree) {
-      return createItem$1(nObject, delivered, source);
+      return createItem$1(proxy, source);
     }
 
     if (!source) {
       destroy(tree);
-      return {
-        tag: null,
-        key: undefined,
-        children: []
-      };
+      return null;
     }
 
     if (Array.isArray(tree)) {
       if (!tree.length) {
-        return createItem$1(nObject, delivered, source);
+        return createItem$1(proxy, source);
       }
 
       const index = tree.findIndex(it => it.tag === source.tag);
 
       if (index < 0) {
         destroy(tree);
-        return createItem$1(nObject, delivered, source);
+        return createItem$1(proxy, source);
       }
 
       const all = tree;
@@ -3681,104 +5272,33 @@
       destroy(all);
     }
 
-    const {
-      tag
-    } = source;
-
-    if (tag !== tree.tag) {
+    if (source.tag !== tree.tag) {
       destroy(tree);
-      return createItem$1(nObject, delivered, source);
+      return createItem$1(proxy, source);
     }
 
-    if (!tag) {
+    if (tree.proxy) {
+      const {
+        proxy
+      } = tree;
+      const {
+        props = {},
+        key
+      } = source;
+      proxy.update(source.props || {}, source.children || []);
       return {
-        tag: null,
-        key: undefined,
-        children: []
+        tag: tree.tag,
+        props,
+        key,
+        proxy
       };
     }
 
-    if (isDeliver(tag)) {
-      const newDelivered = tree.delivered || Object.create(delivered);
-      Reflect.defineProperty(newDelivered, tag[deliverKeySymbol], {
-        configurable: true,
-        enumerable: true,
-        value: source.props ? source.props.value : undefined
-      });
-      return { ...source,
-        delivered: newDelivered,
-        children: [...updateAll$1(nObject, newDelivered, source.children, tree.children)]
-      };
-    }
-
-    if (typeof tag !== 'string') {
-      if (tag[typeSymbol] === 'simple') {
-        return { ...source,
-          children: [...updateAll$1(nObject, delivered, source.children, tree.children)],
-          component: undefined
-        };
-      }
-
-      const {
-        component
-      } = tree;
-
-      if (!component) {
-        return createItem$1(nObject, delivered, source);
-      }
-
-      component.update(source.props || {}, source.children);
-      return { ...source,
-        children: [],
-        component
-      };
-    }
-
-    const ltag = tag.toLowerCase();
-
-    if (ltag === Container) {
-      var _source$props;
-
-      const {
-        component
-      } = tree;
-
-      if (!component) {
-        return createItem$1(nObject, delivered, source);
-      }
-
-      const type = source === null || source === void 0 ? void 0 : (_source$props = source.props) === null || _source$props === void 0 ? void 0 : _source$props.type;
-      const iRender = type ? getRender(type) : nObject.iRender;
-
-      if (iRender !== component.iRender) {
-        return createItem$1(nObject, delivered, source);
-      }
-
-      component.update(source.props || {}, source.children);
-      return { ...source,
-        children: [],
-        component
-      };
-    }
-
-    if (ltag === Value) {
-      return { ...source,
-        children: []
-      };
-    }
-
-    if (ltag.substr(0, 5) === 'neep:' || ltag === 'template') {
-      return { ...source,
-        children: [...updateAll$1(nObject, delivered, source.children, tree.children)]
-      };
-    }
-
-    return { ...source,
-      children: [...updateAll$1(nObject, delivered, source.children, tree.children)]
-    };
+    destroy(tree);
+    return createItem$1(proxy, source);
   }
 
-  function* updateAll$1(nObject, delivered, source, tree) {
+  function* updateAll$1(proxy, source, tree) {
     if (!Array.isArray(source)) {
       source = [source];
     }
@@ -3790,9 +5310,9 @@
       const src = source[index];
 
       if (Array.isArray(src)) {
-        yield updateList$1(nObject, delivered, src, tree[index]);
+        yield updateList$1(proxy, src, tree[index]);
       } else {
-        yield updateItem$1(nObject, delivered, toElement(src), tree[index]);
+        yield updateItem$1(proxy, toElement(src), tree[index]);
       }
     }
 
@@ -3809,30 +5329,63 @@
         const src = toElement(source[index]);
 
         if (Array.isArray(src)) {
-          yield [...recursive2iterable(src)].map(it => createItem$1(nObject, delivered, it));
+          yield src.flat(Infinity).map(it => createItem$1(proxy, it)).filter(Boolean);
         } else {
-          yield createItem$1(nObject, delivered, src);
+          yield createItem$1(proxy, src);
         }
       }
     }
   }
 
-  function convert(nObject, source, tree) {
+  function convert(proxy, source, tree) {
     return refresh(() => postpone(() => {
       if (!tree) {
-        return createAll$1(nObject, nObject.delivered, source);
+        return createAll$1(proxy, source);
       }
 
-      return [...updateAll$1(nObject, nObject.delivered, source, tree)];
+      return [...updateAll$1(proxy, source, tree)];
     }));
   }
 
   let awaitDraw = new Set();
+  const rendererDraw = new Set();
+  const baseTick = [];
+  const middleTick = [];
+  const endTick = [];
+
+  function execTickList(list) {
+    const execList = [...list].sort(([a], [b]) => b - a);
+    list.length = 0;
+
+    try {
+      execList.forEach(([, f]) => f());
+    } catch (e) {
+      printError(e);
+    }
+  }
+
+  function execContainerList() {
+    const list = [...awaitDraw];
+    awaitDraw.clear();
+    list.map(c => c.drawAll());
+  }
+
+  function execRendererDrawList() {
+    const rendererDrawList = [...rendererDraw];
+    rendererDraw.clear();
+
+    for (const f of rendererDrawList) {
+      try {
+        f();
+      } catch (e) {
+        printError(e);
+      }
+    }
+  }
+
   let requested = false;
 
-  function markDraw(c) {
-    awaitDraw.add(c);
-
+  function request() {
     if (requested) {
       return;
     }
@@ -3840,64 +5393,173 @@
     requested = true;
     nextFrame(() => {
       requested = false;
-      const list = [...awaitDraw];
-      awaitDraw.clear();
-      list.map(c => c.drawAll());
+      execTickList(baseTick);
+      execContainerList();
+      execTickList(middleTick);
+      execRendererDrawList();
+      execTickList(endTick);
     });
   }
 
-  class ContainerEntity extends EntityObject {
-    constructor(iRender, props, children, parent, delivered) {
-      super(iRender, parent, delivered);
+  function nextTick(fn, level = 0, type) {
+    const list = type === 'middle' ? middleTick : type === 'end' ? endTick : baseTick;
+    list.push([level, fn]);
+    request();
+  }
 
-      _defineProperty(this, "props", void 0);
+  function markDraw(c) {
+    awaitDraw.add(c);
+    request();
+  }
+
+  function addRendererDraw(fn) {
+    rendererDraw.add(fn);
+    request();
+  }
+
+  function createEntity$1(obj, events) {
+    const cfg = {
+      [objectTypeSymbol]: {
+        configurable: true,
+        value: objectTypeSymbolHookEntity
+      },
+      data: {
+        configurable: true,
+        value: obj.data
+      },
+      exposed: {
+        configurable: true,
+        get: () => obj.exposed
+      },
+      created: {
+        configurable: true,
+        get: () => obj.created
+      },
+      destroyed: {
+        configurable: true,
+        get: () => obj.destroyed
+      },
+      mounted: {
+        configurable: true,
+        get: () => obj.mounted
+      },
+      unmounted: {
+        configurable: true,
+        get: () => obj.unmounted
+      },
+      $_hooks: {
+        configurable: true,
+        value: Object.create(null)
+      },
+      callHook: {
+        configurable: true,
+
+        value(h) {
+          callHook(h, entity);
+        }
+
+      },
+      setHook: {
+        configurable: true,
+
+        value(id, hook) {
+          return setHook(id, hook, entity);
+        }
+
+      },
+      on: {
+        configurable: true,
+        value: events.on
+      },
+      emit: {
+        configurable: true,
+        value: events.emit
+      }
+    };
+    const entity = Object.create(null, cfg);
+    return entity;
+  }
+
+  class ContainerProxy extends RefProxy {
+    setmountedRoot(target, next) {
+      if (this.parentProxy) {
+        return;
+      }
+
+      const container = this.__container;
+
+      if (!container) {
+        return;
+      }
+
+      const {
+        renderer
+      } = this;
+      const [r, n] = renderer.getContainer(container, target, next);
+
+      if (!r) {
+        return;
+      }
+
+      for (const it of getNodes(this.tree)) {
+        renderer.insertNode(r, it, n);
+      }
+    }
+
+    constructor(originalTag, component = null, props = {}, children, parent) {
+      super(component ? getRender(component[rendererSymbol], parent === null || parent === void 0 ? void 0 : parent.renderer) : getRender(parent === null || parent === void 0 ? void 0 : parent.renderer), originalTag, component, props, parent);
+
+      _defineProperty(this, "container", void 0);
+
+      _defineProperty(this, "componentRoot", void 0);
+
+      _defineProperty(this, "__containerData", void 0);
 
       _defineProperty(this, "content", []);
 
-      _defineProperty(this, "_node", null);
-
-      _defineProperty(this, "_container", null);
-
       _defineProperty(this, "rootContainer", this);
 
-      _defineProperty(this, "_drawChildren", false);
+      _defineProperty(this, "__nodes", []);
 
-      _defineProperty(this, "_drawContainer", false);
+      _defineProperty(this, "__container", null);
 
-      _defineProperty(this, "_cancelDrawContainerMonitor", void 0);
+      _defineProperty(this, "__placeholder", void 0);
 
-      _defineProperty(this, "_cancelDrawChildrenMonitor", void 0);
+      _defineProperty(this, "__placeholderNode", void 0);
 
-      _defineProperty(this, "_awaitDraw", new Set());
+      _defineProperty(this, "__targetNode", null);
 
-      _defineProperty(this, "_needDraw", false);
+      _defineProperty(this, "__insertNode", null);
 
-      _defineProperty(this, "_containers", new Set());
+      _defineProperty(this, "__nextNode", null);
 
-      this.props = props;
-      this.parent = parent;
+      _defineProperty(this, "__awaitDraw", new Set());
+
+      _defineProperty(this, "__containers", new Set());
+
+      this.container = this;
+      this.componentRoot = parent === null || parent === void 0 ? void 0 : parent.componentRoot;
+
+      if (component) {
+        this.__containerData = component[componentValueSymbol];
+      }
+
+      {
+        defineProperty(this, 'content', []);
+      }
+
+      this.events.updateInProps(props);
 
       if (parent) {
         this.rootContainer = parent.container.rootContainer;
       }
 
-      this.callHook('beforeCreate');
-      this.childNodes = children;
-
-      const refresh = changed => {
-        if (!changed) {
-          return;
-        }
-
-        this._drawChildren = true;
-        this.refresh();
-      };
-
-      const slots = Object.create(null);
-      this._render = monitor(refresh, () => init(this, this.delivered, this.childNodes, slots, [], false));
-      this._nodes = convert(this, this._render());
-      this.callHook('created');
+      this.__nodes = convert(this, children);
       this.created = true;
+    }
+
+    createEntity(events) {
+      return createEntity$1(this, events);
     }
 
     setChildren(children) {
@@ -3905,135 +5567,784 @@
         return;
       }
 
-      this.childNodes = children;
-      this._drawChildren = true;
-      this.refresh();
+      this.__nodes = convert(this, children, this.__nodes);
+      this.requestDraw();
     }
 
-    setProps(props) {
+    _update(props, children) {
       if (this.destroyed) {
         return;
       }
 
-      this.props = props;
-      this._drawContainer = true;
-      this.refresh();
+      this.__nodes = convert(this, children, this.__nodes);
+      this.events.updateInProps(props);
+      this.requestDraw();
     }
 
-    update(props, children) {
-      this.refresh(() => {
-        this.setProps(props);
-        this.setChildren(children);
-      });
+    _destroy() {
+      destroy(this.__nodes);
+    }
+
+    callHook(id) {
+      callHook(id, this.entity);
     }
 
     requestDraw() {
       this.markDraw(this);
     }
 
-    _mount() {
+    _mount(opt) {
       const {
-        props,
-        parent,
-        iRender
+        parentProxy,
+        renderer
       } = this;
-      const content = draw(this.container.iRender, this._nodes);
+      const parentRenderer = (parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer) || renderer;
+      const {
+        container,
+        target: targetNode,
+        insert,
+        next,
+        exposed
+      } = renderer.mountContainer(this.__containerData, this.attrs, this.events.emit, parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer);
+      console.log(exposed);
+      this.setExposed(exposed);
+      const subOpt = renderer.getMountOptions(container, opt) || opt;
+      const placeholder = createPlaceholder(parentRenderer);
+      this.__placeholder = placeholder;
+      const placeholderNode = placeholder.node;
+      this.__placeholderNode = placeholderNode;
+      this.__container = container;
+      const content = draw(renderer, subOpt, this.__nodes);
       this.content = content;
-      const [container, node] = iRender.mount(props, parent === null || parent === void 0 ? void 0 : parent.iRender);
+      this.__insertNode = insert;
+      this.__nextNode = next;
 
-      for (const it of getNodes(content)) {
-        iRender.insertNode(container, it);
+      if (!targetNode && parentRenderer === renderer) {
+        this.tree = insert ? [...content, createMountedNode({
+          node: insert
+        }), placeholder] : [...content, placeholder];
+        return subOpt;
       }
 
-      this.tree = [createMountedNode({
-        tag: Value,
-        key: undefined,
-        component: undefined,
-        node,
-        value: node,
-        children: []
-      })];
-      this._node = node;
-      this._container = container;
+      const target = targetNode || container;
+      this.__targetNode = target;
+
+      for (const it of getNodes(content)) {
+        renderer.insertNode(target, it, next);
+      }
+
+      this.tree = insert ? [createMountedNode({
+        node: insert
+      }), placeholder] : [placeholder];
+      return subOpt;
     }
 
-    _destroy() {
-      destroy(this.content);
+    _redrawSelf() {
+      const {
+        __targetNode,
+        __insertNode,
+        __nextNode
+      } = this;
+      const {
+        attrs,
+        parentProxy,
+        renderer
+      } = this;
+      const placeholder = this.__placeholder;
+      const placeholderNode = this.__placeholderNode;
+      const container = this.__container;
+      const parentRenderer = (parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer) || renderer;
+      const {
+        target: targetNode,
+        insert,
+        next
+      } = renderer.updateContainer(container, __targetNode, __insertNode, __nextNode, this.__containerData, attrs, this.events.emit, parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer);
+      this.__insertNode = insert;
+      this.__nextNode = next;
+      const parentNode = parentRenderer.getParent(placeholderNode);
+
+      if (insert !== __insertNode) {
+        if (__insertNode) {
+          renderer.removeNode(__insertNode);
+        }
+
+        if (insert && parentNode) {
+          renderer.insertNode(parentNode, insert, placeholderNode);
+        }
+      }
+
+      if (!targetNode && parentRenderer === renderer) {
+        const {
+          content
+        } = this;
+
+        if (__targetNode && parentNode) {
+          const nextNode = insert || placeholderNode;
+
+          for (const it of getNodes(content)) {
+            parentRenderer.insertNode(parentNode, it, nextNode);
+          }
+
+          this.__targetNode = null;
+        }
+
+        this.tree = insert ? [...content, createMountedNode({
+          node: insert
+        }), placeholder] : [...content, placeholder];
+      } else {
+        const target = targetNode || container;
+        this.__targetNode = target;
+
+        if (target !== __targetNode || next !== __nextNode) {
+          for (const it of getNodes(this.content)) {
+            renderer.insertNode(target, it, next);
+          }
+        }
+
+        this.tree = insert ? [createMountedNode({
+          node: insert
+        }), placeholder] : [placeholder];
+      }
+
+      renderer.recoveryContainer(container, __targetNode, __insertNode, __nextNode, targetNode, insert, next, this.__containerData, attrs, parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer);
+    }
+
+    _redrawChildren(opts) {
+      const content = draw(this.renderer, opts, this.__nodes, this.content);
+      this.content = content;
+
+      if (!this.__targetNode) {
+        return;
+      }
+
+      const placeholder = this.__placeholder;
+      const insertNode = this.__insertNode;
+      this.tree = insertNode ? [...content, createMountedNode({
+        node: insertNode
+      }), placeholder] : [...content, placeholder];
+    }
+
+    _redraw(opt) {
+      this._redrawChildren(opt);
+
+      this._redrawSelf();
     }
 
     _unmount() {
       const {
-        parent,
-        iRender
+        parentProxy,
+        renderer,
+        __insertNode
       } = this;
+      const parentRenderer = (parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer) || renderer;
+      unmount(this.renderer, this.content);
 
-      if (parent) {
-        unmount(parent.iRender, this.tree);
+      if (__insertNode) {
+        parentRenderer.removeNode(__insertNode);
       }
 
-      iRender.unmount(this._container, this._node, Boolean(parent));
-      unmount(this.iRender, this.content);
+      parentRenderer.removeNode(this.__placeholderNode);
+      renderer.unmountContainer(this.__container, this.__targetNode, __insertNode, this.__nextNode, this.__containerData, this.attrs, parentProxy === null || parentProxy === void 0 ? void 0 : parentProxy.renderer);
     }
 
-    _draw() {
-      const {
-        _drawChildren: drawChildren,
-        _drawContainer: drawContainer
-      } = this;
-      this._drawContainer = false;
+    markDraw(proxy) {
+      var _this$parentProxy;
 
-      if (this._cancelDrawContainerMonitor) {
-        this._cancelDrawContainerMonitor();
-      }
-
-      if (drawContainer) {
-        const result = exec(c => c && [this._drawContainer = true, this.requestDraw()], () => {
-          var _this$parent;
-
-          return this.iRender.drawContainer(this._container, this._node, this.props, (_this$parent = this.parent) === null || _this$parent === void 0 ? void 0 : _this$parent.iRender);
-        });
-        [this._container, this._node] = result.result;
-        this._cancelDrawContainerMonitor = result.stop;
-      }
-
-      if (this.parent && this.parent.iRender !== this.iRender) {
+      if (((_this$parentProxy = this.parentProxy) === null || _this$parentProxy === void 0 ? void 0 : _this$parentProxy.renderer) === this.renderer) {
+        this.parentProxy.container.markDraw(proxy);
         return;
       }
 
-      this._drawChildren = false;
-
-      if (this._cancelDrawChildrenMonitor) {
-        this._cancelDrawChildrenMonitor();
+      if (proxy === this && this.parentProxy) {
+        this.parentProxy.container.markDraw(this);
+      } else {
+        this.__awaitDraw.add(proxy);
       }
 
-      if (drawChildren) {
-        const result = exec(c => c && [this._drawChildren = true, this.requestDraw()], () => this.content = draw(this.iRender, this._nodes, this.content));
-        this.content = result.result;
-        this._cancelDrawChildrenMonitor = result.stop;
-      }
+      this.rootContainer.markDrawContainer(this);
     }
 
-    _drawSelf() {
+    drawContainer() {
+      if (this.destroyed || !this.__container) {
+        return;
+      }
+
       const {
-        _drawChildren: drawChildren,
-        _drawContainer: drawContainer
+        __awaitDraw
       } = this;
-      this._needDraw = false;
-      this._drawChildren = false;
-      this._drawContainer = false;
+      const list = [...__awaitDraw];
 
-      if (drawContainer) {
-        var _this$parent2;
+      __awaitDraw.clear();
 
-        this.iRender.drawContainer(this._container, this._node, this.props, (_this$parent2 = this.parent) === null || _this$parent2 === void 0 ? void 0 : _this$parent2.iRender, true);
+      list.map(c => c.redraw());
+    }
+
+    markDrawContainer(container) {
+      this.__containers.add(container);
+
+      markDraw(this);
+    }
+
+    drawAll() {
+      const containers = this.__containers;
+
+      if (!containers.size) {
+        return;
       }
 
-      if (drawChildren) {
-        this.content = draw(this.iRender, this._nodes, this.content);
+      const list = [...containers];
+      containers.clear();
+      const completeList = [];
+      setCompleteList(completeList);
+      list.forEach(c => c.drawContainer());
+      completeList.forEach(r => r());
+    }
+
+  }
+
+  function createContainerEntity(e, p) {
+    if (e === undefined) {
+      return createRender(null, p);
+    }
+
+    if (isContainerComponent(e)) {
+      return createRender(e, p);
+    }
+
+    if (!isElement(e)) {
+      return createRender(null, p, [createElement(e)]);
+    }
+
+    if (isContainerComponent(e.tag)) {
+      const params = { ...e.props,
+        ...p
+      };
+      return createRender(e.tag, params);
+    }
+
+    return createRender(null, p, [e]);
+  }
+
+  function createRender(tag, props, childNodes = []) {
+    const children = value(childNodes);
+    const normalizeAuxiliaryObject = {
+      renderer: tag ? getRender(tag[rendererSymbol]) : getRender(),
+      refresh,
+      slotRenderFnList: new WeakMap(),
+      delivered: Object.create(null),
+      simpleParent: undefined
+    };
+    let __needRefresh = false;
+    let __refreshing = false;
+    let container;
+
+    function refresh() {
+      if (!container) {
+        __needRefresh = true;
+        return;
+      }
+
+      if (container.destroyed) {
+        return;
+      }
+
+      __needRefresh = true;
+
+      if (!container.created) {
+        return;
+      }
+
+      if (__refreshing) {
+        return;
+      }
+
+      __refreshing = true;
+      let nodes;
+
+      for (;;) {
+        if (wait$1(refreshObj)) {
+          break;
+        }
+
+        if (!__needRefresh) {
+          break;
+        }
+
+        __needRefresh = false;
+        nodes = _render();
+
+        if (container.destroyed) {
+          return;
+        }
+      }
+
+      __refreshing = false;
+
+      if (wait$1(refreshObj)) {
+        return;
+      }
+
+      if (!nodes) {
+        return;
+      }
+
+      if (!container.mounted) {
+        return;
+      }
+
+      if (container.destroyed) {
+        return;
+      }
+
+      if (container.unmounted) {
+        return;
+      }
+
+      container.setChildren(nodes);
+    }
+
+    const refreshObj = {
+      refresh
+    };
+    const slots = Object.create(null);
+
+    const _render = monitor(c => c && refresh(), () => init(normalizeAuxiliaryObject, children.value, slots, [], false, false));
+
+    container = new ContainerProxy(tag, tag, props, _render());
+
+    if (__needRefresh) {
+      refresh();
+    }
+
+    return [container, children];
+  }
+
+  function render(e, p = {}) {
+    const [container, children] = createContainerEntity(e, p);
+    const entity = Object.create(container.entity, {
+      update: {
+        configurable: true,
+
+        value(c) {
+          if (container.destroyed) {
+            return entity;
+          }
+
+          children(c === undefined ? [] : isElement(c) ? [c] : [createElement(c)]);
+          return entity;
+        }
+
+      },
+      mount: {
+        configurable: true,
+
+        value(target, next) {
+          if (container.destroyed) {
+            return entity;
+          }
+
+          if (container.mounted) {
+            return entity;
+          }
+
+          container.mount({});
+          container.setmountedRoot(target, next);
+          return entity;
+        }
+
+      },
+      unmount: {
+        configurable: true,
+
+        value() {
+          if (!container.mounted) {
+            return;
+          }
+
+          if (container.unmounted) {
+            return;
+          }
+
+          if (!container.destroyed) {
+            container.destroy();
+          }
+
+          container.unmount();
+          return entity;
+        }
+
+      }
+    });
+
+    {
+      devtools.renderHook(entity, container);
+    }
+
+    return entity;
+  }
+
+  function setObjectType(component, type) {
+    Reflect.defineProperty(component, objectTypeSymbol, {
+      value: type
+    });
+    return component;
+  }
+
+  function setName(component, name) {
+    if (!name || typeof name !== 'string') {
+      return component;
+    }
+
+    Reflect.defineProperty(component, nameSymbol, {
+      value: name
+    });
+    return component;
+  }
+
+  function setValue(component, value) {
+    Reflect.defineProperty(component, componentValueSymbol, {
+      value
+    });
+    return component;
+  }
+
+  function setComponents(component, components) {
+    if (!components || typeof components !== 'object') {
+      return component;
+    }
+
+    Reflect.defineProperty(component, componentsSymbol, {
+      value: components
+    });
+    return component;
+  }
+
+  function createSelfComponent() {
+    const component = function component(params) {
+      return createElementBase(component, params);
+    };
+
+    return component;
+  }
+
+  function createDeliverComponent(def) {
+    const component = createSelfComponent();
+    setObjectType(component, objectTypeSymbolDeliverComponent);
+    Reflect.defineProperty(component, deliverKeySymbol, {
+      value: Symbol()
+    });
+    Reflect.defineProperty(component, deliverDefaultSymbol, {
+      value: def
+    });
+    return component;
+  }
+
+  function createRenderComponent(f, {
+    name,
+    components
+  } = {}) {
+    const component = createSelfComponent();
+    setObjectType(component, objectTypeSymbolRenderComponent);
+    setName(component, name);
+    setValue(component, f);
+    setComponents(component, components);
+    return component;
+  }
+
+  function createContainerComponent(value, {
+    name,
+    renderer
+  } = {}) {
+    const component = createSelfComponent();
+    setObjectType(component, objectTypeSymbolContainerComponent);
+    setName(component, name);
+    setValue(component, value);
+
+    if (typeof renderer === 'string' || typeof renderer === 'object') {
+      Reflect.defineProperty(component, rendererSymbol, {
+        value: renderer
+      });
+    }
+
+    return component;
+  }
+
+  function createElementComponent(value, {
+    name
+  } = {}) {
+    const component = createSelfComponent();
+    setObjectType(component, objectTypeSymbolElementComponent);
+    setName(component, name);
+    setValue(component, value);
+    return component;
+  }
+
+  function createStandardComponent(f, {
+    name,
+    components,
+    render,
+    props
+  } = {}) {
+    const component = createComponentFunc(f, render);
+    setName(component, name);
+    setComponents(component, components);
+
+    if (Array.isArray(props)) {
+      Reflect.defineProperty(component, propsSymbol, {
+        value: [...props]
+      });
+    }
+
+    return component;
+  }
+
+  function createComponentFunc(f, render) {
+    if (typeof render !== 'function') {
+      return f;
+    }
+
+    const renderComponent = isRenderComponent(render) ? render : createRenderComponent(render);
+    return function StandardComponent(props, context) {
+      return createElement(renderComponent, f(props, context));
+    };
+  }
+
+  function createNativeComponent(f, {
+    name,
+    components,
+    render,
+    props
+  } = {}) {
+    const component = createComponentFunc(f, render);
+    setObjectType(component, objectTypeSymbolNativeComponent);
+    setName(component, name);
+    setComponents(component, components);
+
+    if (Array.isArray(props)) {
+      Reflect.defineProperty(component, propsSymbol, {
+        value: [...props]
+      });
+    }
+
+    return component;
+  }
+
+  function createSimpleComponent(f, {
+    name,
+    components
+  } = {}) {
+    const component = f;
+    setObjectType(component, objectTypeSymbolSimpleComponent);
+    setName(component, name);
+    setComponents(component, components);
+    return component;
+  }
+
+  function createShellComponent(f, {
+    name
+  } = {}) {
+    const component = f;
+    setObjectType(component, objectTypeSymbolShellComponent);
+    setName(component, name);
+    return component;
+  }
+
+  const LOADING = 0;
+  const FAILING = -1;
+  const COMPLETE = 1;
+
+  function lazy(component, Placeholder) {
+    const reslut = value(LOADING);
+    let isLoad = false;
+    const ComponentValue = value(undefined);
+
+    async function load() {
+      if (isLoad) {
+        return;
+      }
+
+      isLoad = true;
+
+      if (reslut()) {
+        return;
+      }
+
+      reslut(COMPLETE);
+
+      try {
+        const c = await component();
+
+        if (typeof c === 'function') {
+          ComponentValue(c);
+          return;
+        }
+
+        if (!c) {
+          reslut(FAILING);
+          return;
+        }
+
+        if (typeof c.default === 'function') {
+          ComponentValue(c.default);
+          return;
+        }
+
+        reslut(FAILING);
+      } catch (e) {
+        console.error(e);
+        reslut(FAILING);
       }
     }
 
-    drawSelf() {
+    return createSimpleComponent((props, {
+      childNodes
+    }) => {
+      const com = ComponentValue();
+
+      if (com) {
+        return createElement(com, props, ...childNodes);
+      }
+
+      load();
+
+      if (!Placeholder) {
+        return null;
+      }
+
+      return createElement(Placeholder, {
+        loading: reslut() === LOADING
+      });
+    }, {
+      name: 'Lazy'
+    });
+  }
+
+  function getNodeArray$4(result) {
+    if (Array.isArray(result)) {
+      return result;
+    }
+
+    if (!isElement(result)) {
+      return [result];
+    }
+
+    if (result.tag !== Fragment) {
+      return [result];
+    }
+
+    return result.children;
+  }
+
+  class RenderProxy extends NodeProxy {
+    get content() {
+      return this.tree;
+    }
+
+    constructor(props, children, parent) {
+      super(Render, Render, props, children, parent);
+
+      _defineProperty(this, "childNodes", void 0);
+
+      _defineProperty(this, "__render", void 0);
+
+      _defineProperty(this, "__refreshing", false);
+
+      _defineProperty(this, "__needRefresh", false);
+
+      _defineProperty(this, "__delayedRefresh", 0);
+
+      _defineProperty(this, "_nodes", []);
+
+      this.childNodes = children;
+
+      const refresh = f => {
+        this.refresh(f);
+      };
+
+      const normalizeAuxiliaryObject = {
+        renderer: this.renderer,
+        refresh,
+        slotRenderFnList: new WeakMap(),
+        delivered: this.delivered,
+        simpleParent: undefined
+      };
+      const slots = Object.create(null);
+
+      const initChildNodes = result => init(normalizeAuxiliaryObject, getNodeArray$4(result), slots, [], false, true);
+
+      this.__render = monitor(changed => changed && this.refresh(), () => {
+        const {
+          childNodes
+        } = this;
+
+        if (childNodes.length !== 1) {
+          return initChildNodes(childNodes);
+        }
+
+        const [f] = childNodes;
+
+        if (typeof f !== 'function') {
+          return initChildNodes(childNodes);
+        }
+
+        return initChildNodes(f());
+      });
+      this.created = true;
+      this.refresh();
+    }
+
+    refresh(f) {
+      if (typeof f === 'function') {
+        try {
+          this.__delayedRefresh++;
+          return f();
+        } finally {
+          this.__delayedRefresh--;
+
+          if (this.__delayedRefresh <= 0) {
+            this.refresh();
+          }
+        }
+      }
+
+      if (this.destroyed) {
+        return;
+      }
+
+      this.__needRefresh = true;
+
+      if (!this.created) {
+        return;
+      }
+
+      if (this.__refreshing) {
+        return;
+      }
+
+      this.__refreshing = true;
+      let nodes;
+
+      while (this.__needRefresh && !wait$1(this)) {
+        this.__needRefresh = false;
+        nodes = this.__render();
+
+        if (this.destroyed) {
+          return;
+        }
+      }
+
+      this.__refreshing = false;
+
+      if (!nodes) {
+        return;
+      }
+
+      this._nodes = convert(this, nodes, this._nodes);
+
+      if (wait$1(this)) {
+        return;
+      }
+
       if (!this.mounted) {
         return;
       }
@@ -4042,203 +6353,229 @@
         return;
       }
 
-      this.callHook('beforeDraw');
-      exec(c => c && this.requestDraw(), () => this._drawSelf());
-      complete(() => this.callHook('drawn'));
-    }
-
-    markDraw(nObject, remove = false) {
-      var _this$parent3;
-
-      if (((_this$parent3 = this.parent) === null || _this$parent3 === void 0 ? void 0 : _this$parent3.iRender) === this.iRender) {
-        this.parent.container.markDraw(nObject, remove);
+      if (this.unmounted) {
         return;
       }
 
-      if (nObject === this && this.parent) {
-        this.parent.container.markDraw(this, remove);
-        this._needDraw = !remove;
-      } else if (remove) {
-        this._awaitDraw.delete(nObject);
-      } else {
-        this._awaitDraw.add(nObject);
-      }
-
-      this.rootContainer.markDrawContainer(this, !this._needDraw && !this._awaitDraw.size || this.destroyed);
+      this.requestDraw();
     }
 
-    drawContainer() {
-      const {
-        _node: node,
-        _container: container,
-        _awaitDraw: awaitDraw
-      } = this;
-
-      if (!node || !container) {
-        return;
-      }
-
-      this.callHook('beforeDraw');
-      const needDraw = this._needDraw;
-      this._needDraw = false;
-      const list = [...awaitDraw];
-      awaitDraw.clear();
-
-      if (needDraw) {
-        this.drawSelf();
-      }
-
-      list.map(c => c.draw());
-      this.iRender.drawNode(container, node);
-      complete(() => this.callHook('drawn'));
+    _update(props, children) {
+      this.childNodes = children;
+      this.refresh();
     }
 
-    markDrawContainer(container, remove = false) {
-      if (remove) {
-        this._containers.delete(container);
-      } else {
-        this._containers.add(container);
-      }
+    _destroy() {
+      this.__render.stop();
 
-      markDraw(this);
+      destroy(this._nodes);
     }
 
-    drawAll() {
-      const containers = this._containers;
+    _mount(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this._nodes);
+    }
 
-      if (!containers.size) {
-        return;
-      }
+    _redraw(mountOptions) {
+      this.tree = draw(this.renderer, mountOptions, this._nodes, this.tree);
+    }
 
-      const list = [...containers];
-      containers.clear();
-      this.callHook('beforeDrawAll');
-      const refs = [];
-      const completeList = [];
-      setCompleteList(completeList);
-      setRefList(refs);
-      list.forEach(c => c.drawContainer());
-      setRefList();
-      refs.forEach(r => r());
-      completeList.forEach(r => r());
-      this.callHook('drawnAll');
+    _unmount() {
+      unmount(this.renderer, this.tree);
     }
 
   }
 
-  function render(e, p = {}) {
-    let params = { ...p
-    };
-    const container = new ContainerEntity(getRender(p.type), params, e === undefined ? [] : isElement(e) ? [e] : [createElement(e)]);
+  function isProxy(v, type) {
+    switch (type) {
+      case 'standardComponent':
+        return v instanceof StandardComponentProxy;
 
-    {
-      devtools.renderHook(container);
+      case 'renderComponent':
+        return v instanceof RenderComponentProxy;
+
+      case 'component':
+        return v instanceof ComponentProxy;
+
+      case 'container':
+        return v instanceof ContainerProxy;
+
+      case 'deliver':
+        return v instanceof DeliverProxy;
+
+      case 'element':
+        return v instanceof ElementProxy;
+
+      case 'group':
+        return v instanceof GroupProxy;
+
+      case 'shell':
+        return v instanceof ShellProxy;
+
+      case 'value':
+        return v instanceof ValueProxy;
+
+      case 'render':
+        return v instanceof RenderProxy;
+
+      case 'slot':
+        return v instanceof SlotProxy;
+
+      case 'node':
+        return v instanceof NodeProxy;
+
+      case 'ref':
+        return v instanceof RefProxy;
     }
 
-    const {
-      exposed
-    } = container;
-    Reflect.defineProperty(exposed, '$update', {
-      value(c) {
-        container.setChildren(c === undefined ? [] : isElement(c) ? [c] : [createElement(c)]);
-        return exposed;
-      },
-
-      configurable: true
-    });
-    Reflect.defineProperty(exposed, '$mount', {
-      value(target) {
-        if (exposed.$mounted) {
-          return exposed;
-        }
-
-        if (target) {
-          params.target = target;
-          container.setProps(params);
-        }
-
-        container.mount();
-        return exposed;
-      },
-
-      configurable: true
-    });
-    Reflect.defineProperty(exposed, '$unmount', {
-      value() {
-        if (!exposed.$mounted) {
-          return;
-        }
-
-        if (exposed.$unmounted) {
-          return;
-        }
-
-        if (exposed.$destroyed) {
-          return container.destroy();
-        }
-
-        container.unmount();
-      },
-
-      configurable: true
-    });
-
-    if (params.target) {
-      container.mount();
-    }
-
-    return exposed;
+    return v instanceof BaseProxy;
   }
 
-  function Mark(symbol, value) {
-    return component => {
-      component[symbol] = value;
-      return component;
-    };
-  }
+  var Neep = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    install: install,
+    Error: NeepError,
+    render: render,
+    register: register,
+    getNode: getNode,
+    createDeliverComponent: createDeliverComponent,
+    createRenderComponent: createRenderComponent,
+    createContainerComponent: createContainerComponent,
+    createElementComponent: createElementComponent,
+    createStandardComponent: createStandardComponent,
+    createNativeComponent: createNativeComponent,
+    createSimpleComponent: createSimpleComponent,
+    createShellComponent: createShellComponent,
+    createComponent: createStandardComponent,
+    isSimpleComponent: isSimpleComponent,
+    isShellComponent: isShellComponent,
+    isNativeComponent: isNativeComponent,
+    isRenderComponent: isRenderComponent,
+    isContainerComponent: isContainerComponent,
+    isElementComponent: isElementComponent,
+    isDeliverComponent: isDeliverComponent,
+    isDeliver: isDeliverComponent,
+    lazy: lazy,
+    version: version,
+    isProduction: isProduction,
+    ScopeSlot: ScopeSlot,
+    Render: Render,
+    Slot: Slot,
+    Container: Container,
+    Template: Template,
+    Fragment: Fragment,
+    value: value,
+    computed: computed,
+    isValue: isValue,
+    encase: encase,
+    valueify: valueify,
+    asValue: asValue,
+    mixValue: mixValue,
+    defineProperty: defineProperty,
+    ref: ref,
+    watch: watch,
+    useValue: useValue,
+    useService: useService,
+    byService: byService,
+    hook: hook,
+    isElement: isElement,
+    isFragmentElement: isFragmentElement,
+    isRenderElement: isRenderElement,
+    isSimpleElement: isSimpleElement,
+    createElement: createElement,
+    createElementBase: createElementBase,
+    createRenderElement: createRenderElement,
+    elements: elements,
+    equal: equal,
+    createTemplateElement: createTemplateElement,
+    label: label,
+    rendererSymbol: rendererSymbol,
+    nameSymbol: nameSymbol,
+    componentsSymbol: componentsSymbol,
+    propsSymbol: propsSymbol,
+    componentValueSymbol: componentValueSymbol,
+    objectTypeSymbol: objectTypeSymbol,
+    objectTypeSymbolElement: objectTypeSymbolElement,
+    objectTypeSymbolDeliverComponent: objectTypeSymbolDeliverComponent,
+    objectTypeSymbolNativeComponent: objectTypeSymbolNativeComponent,
+    objectTypeSymbolSimpleComponent: objectTypeSymbolSimpleComponent,
+    objectTypeSymbolShellComponent: objectTypeSymbolShellComponent,
+    objectTypeSymbolRenderComponent: objectTypeSymbolRenderComponent,
+    objectTypeSymbolContainerComponent: objectTypeSymbolContainerComponent,
+    objectTypeSymbolElementComponent: objectTypeSymbolElementComponent,
+    objectTypeSymbolHookEntity: objectTypeSymbolHookEntity,
+    objectTypeSymbolRootEntity: objectTypeSymbolRootEntity,
+    deliverKeySymbol: deliverKeySymbol,
+    deliverDefaultSymbol: deliverDefaultSymbol,
+    setHook: setHook,
+    callHook: callHook,
 
-  function mName(name, component) {
-    if (!component) {
-      return Mark(nameSymbol, name);
-    }
+    get current() {
+      return current;
+    },
 
-    component[nameSymbol] = name;
-    return component;
-  }
-
-  function mSimple(component) {
-    if (!component) {
-      return Mark(typeSymbol, 'simple');
-    }
-
-    component[typeSymbol] = 'simple';
-    return component;
-  }
-
-  function create$1(c, r) {
-    if (typeof r === 'function') {
-      c[renderSymbol] = r;
-    }
-
-    return c;
-  }
-
-  function mark(component, ...marks) {
-    for (const m of marks) {
-      m(component);
-    }
-
-    return component;
-  }
+    checkCurrent: checkCurrent,
+    execUseHooks: execUseHooks,
+    addContextConstructor: addContextConstructor,
+    addEntityConstructor: addEntityConstructor,
+    refresh: refresh,
+    nextTick: nextTick,
+    addRendererDraw: addRendererDraw,
+    addRecognizer: addRecognizer,
+    isProxy: isProxy
+  });
 
   /*!
-   * NeepHtmlRenderer v0.1.0-alpha.15
-   * (c) 2019-2020 Fierflame
+   * NeepRendererHtml v0.1.0-alpha.17
+   * (c) 2019-2021 Fierflame
    * @license MIT
    */
+  const xmlnsMap = {
+    svg: 'http://www.w3.org/2000/svg',
+    html: 'http://www.w3.org/1999/xhtml',
+    mathml: 'http://www.w3.org/1998/Math/MathML'
+  };
+  const SVGTags = new Set(['altGlyph', 'altGlyphDef', 'altGlyphItem', 'animate', 'animateColor', 'animateMotion', 'animateTransform', 'circle', 'clipPath', 'color-profile', 'cursor', 'defs', 'desc', 'ellipse', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite', 'feConvolveMatrix', 'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight', 'feFlood', 'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR', 'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode', 'feMorphology', 'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence', 'filter', 'font-face', 'font-face-format', 'font-face-name', 'font-face-src', 'font-face-uri', 'foreignObject', 'g', 'glyph', 'glyphRef', 'hkern', 'image', 'line', 'linearGradient', 'marker', 'mask', 'metadata', 'missing-glyph', 'mpath', 'path', 'pattern', 'polygon', 'polyline', 'radialGradient', 'rect', 'script', 'set', 'stop', 'style', 'svg', 'switch', 'symbol', 'text', 'textPath', 'title', 'tref', 'tspan', 'use', 'view', 'vkern']);
+  const MathMLTags = new Set(['maction', 'math', 'menclose', 'merror', 'mfenced', 'mfrac', 'mglyph', 'mi', 'mlabeledtr', 'mmultiscripts', 'mn', 'mo', 'mover', 'mpadded', 'mphantom', 'mroot', 'mrow', 'ms', 'mspace', 'msqrt', 'mstyle', 'msub', 'msubsup', 'msup', 'mtable', 'mtd', 'mtext', 'mtr', 'munder', 'munderover', 'semantics']);
 
-  function installNeep() {
-    return install;
+  function createElement$1(tagname, namespace) {
+    const res = /^([a-z][a-z0-9-]*):([a-z0-9-]+)$/i.exec(tagname);
+    const tag = res ? res[2] : tagname;
+    const ns = (namespace || (res === null || res === void 0 ? void 0 : res[1]) || SVGTags.has(tag.toLowerCase()) && 'svg' || MathMLTags.has(tag.toLowerCase()) && 'mathml' || '').toLowerCase();
+
+    if (!ns) {
+      return document.createElement(tag);
+    }
+
+    return document.createElementNS(ns in xmlnsMap && xmlnsMap[ns] || ns, tag);
+  }
+
+  function createComponent(renderer) {
+    const node = createElement$1('neep-component');
+    return [node, node.attachShadow({
+      mode: 'open'
+    })];
+  }
+
+  function createPlaceholder$1() {
+    return document.createComment('');
+  }
+
+  function createText(text) {
+    return document.createTextNode(text);
+  }
+
+  function getParent(node) {
+    return node.parentNode;
+  }
+
+  function insertNode(parent, node, next = null) {
+    parent.insertBefore(node, next);
+  }
+
+  function installNeep(renderer) {
+    install({
+      renderer
+    });
   }
 
   function getId(v) {
@@ -4253,18 +6590,20 @@
     return undefined;
   }
 
-  function updateId(props, el, old) {
+  const PropsMap = new WeakMap();
+
+  function updateId(props, el) {
+    const old = PropsMap.get(el);
     const id = getId(isValue(props.id) ? props.id() : props.id);
+    PropsMap.set(el, id);
 
     if (id !== old) {
       if (typeof id === 'string') {
-        el.id = props.id;
+        el.id = id;
       } else {
         el.removeAttribute('id');
       }
     }
-
-    return id;
   }
 
   function* recursive2iterable$1(list) {
@@ -4327,10 +6666,13 @@
     }
   }
 
-  function updateClass(props, el, old) {
+  const PropsMap$1 = new WeakMap();
+
+  function updateClass(props, el) {
+    const old = PropsMap$1.get(el);
     const classes = getClass(isValue(props.class) ? props.class() : props.class);
     update$1(el, classes, old);
-    return classes;
+    PropsMap$1.set(el, classes);
   }
 
   const unit = {
@@ -4460,13 +6802,17 @@
     }
   }
 
-  function updateStyle(props, css, old, hasStyle) {
+  const PropsMap$2 = new WeakMap();
+
+  function updateStyle(props, el, css, hasStyle) {
     if (!hasStyle) {
       return undefined;
     }
 
+    const old = PropsMap$2.get(el);
     const style = getStyle(isValue(props.style) ? props.style() : props.style);
     update$1$1(css, style, old);
+    PropsMap$2.set(el, style);
     return style;
   }
 
@@ -4648,17 +6994,14 @@
     }
   }
 
-  function updateAttrs(props, el, old, hasStyle) {
+  const PropsMap$3 = new WeakMap();
+
+  function updateAttrs(props, el, hasStyle) {
+    const old = PropsMap$3.get(el) || {};
     const attrs = getAttrs(props, hasStyle);
     update$2(el, attrs, old);
     setAttrs(el, attrs);
-    return attrs;
-  }
-
-  function createEventEmitter() {
-    const events = new EventEmitter();
-    events.__eventBind = Object.create(null);
-    return events;
+    PropsMap$3.set(el, attrs);
   }
 
   function* getElementModel(el) {
@@ -4697,48 +7040,63 @@
     }
   }
 
-  function getEventName$1(k) {
-    if (k.substr(0, 2) !== 'on') {
-      return '';
+  const ValueEventMap = new WeakMap();
+
+  function getValueEventBind(el) {
+    let list = ValueEventMap.get(el);
+
+    if (list) {
+      return list;
     }
 
-    let n = k.substr(2);
-
-    if (n[0] === ':' || n[0] === '-') {
-      return '';
-    }
-
-    return n;
+    list = Object.create(null);
+    ValueEventMap.set(el, list);
+    return list;
   }
 
-  function updateEvent(props, el, event = createEventEmitter()) {
-    event.updateInProps(props, addEvent => {
-      for (const k in props) {
-        const f = props[k];
+  const bindMap = new WeakMap();
 
-        if (typeof f !== 'function') {
-          continue;
-        }
+  function getEventBind(el) {
+    let list = bindMap.get(el);
 
-        const name = getEventName$1(k);
+    if (list) {
+      return list;
+    }
 
-        if (!name) {
-          continue;
-        }
+    list = Object.create(null);
+    bindMap.set(el, list);
+    return list;
+  }
 
-        addEvent(name, f);
+  function updateEvent(props, el, emit) {
+    const valueEventMap = getValueEventBind(el);
+
+    for (const [prop, name, t] of getElementModel(el)) {
+      const value = props[prop];
+      const item = valueEventMap[prop];
+
+      if (item && item[0] === value) {
+        continue;
       }
 
-      for (const [prop, name, t] of getElementModel(el)) {
-        const value = props[prop];
-
-        if (isValue(value)) {
-          addEvent(name, e => value(t(e)));
-        }
+      if (item) {
+        item[1]();
       }
-    });
-    const names = new Set(event.names.map(String));
-    const eventBind = event.__eventBind;
+
+      if (!isValue(value)) {
+        continue;
+      }
+
+      const f = e => {
+        value(t(e));
+      };
+
+      el.addEventListener(name, f);
+      valueEventMap[name] = [value, () => el.removeEventListener(name, f)];
+    }
+
+    const names = new Set(emit.names.map(String));
+    const eventBind = getEventBind(el);
 
     for (const k of Object.keys(eventBind)) {
       if (names.has(k)) {
@@ -4749,16 +7107,12 @@
       delete eventBind[k];
     }
 
-    const {
-      emit
-    } = event;
-
     for (const k of names) {
       if (k in eventBind) {
         continue;
       }
 
-      const f = (...p) => emit(k, ...p);
+      const f = p => emit(k, p);
 
       el.addEventListener(k, f);
 
@@ -4766,333 +7120,205 @@
         el.removeEventListener(k, f);
       };
     }
-
-    return event;
   }
 
-  const PropsMap = new WeakMap();
-
-  function update$3(el, props) {
+  function updateProps(renderer, el, props, emit) {
     const css = el.style;
     const hasStyle = css instanceof CSSStyleDeclaration;
-    const old = PropsMap.get(el) || {
-      attrs: {}
-    };
-    const id = updateId(props, el, old.id);
-    const classes = updateClass(props, el, old.classes);
-    const style = updateStyle(props, css, old.style, hasStyle);
-    const attrs = updateAttrs(props, el, old.attrs, hasStyle);
-    const event = updateEvent(props, el, old.event);
-    PropsMap.set(el, {
-      id,
-      classes,
-      style,
-      attrs,
-      event
-    });
+    updateId(props, el);
+    updateClass(props, el);
+    updateAttrs(props, el, hasStyle);
+    updateStyle(props, el, css, hasStyle);
+    updateEvent(props, el, emit);
     return el;
   }
 
-  let list;
-
   function nextFrame$1(f) {
-    if (list) {
-      list.push(f);
+    window.requestAnimationFrame(f);
+  }
+
+  function getTarget(renderer, container, target, parent) {
+    if (isValue(target)) {
+      target = target.value;
+    }
+
+    if (target === null) {
+      return {
+        target: container,
+        insert: null,
+        next: null
+      };
+    }
+
+    if (typeof target === 'string') {
+      target = document.querySelector(target);
+    }
+
+    if (target instanceof Element) {
+      return {
+        target,
+        insert: null,
+        next: null
+      };
+    }
+
+    return {
+      target: null,
+      insert: null,
+      next: null
+    };
+  }
+
+  function mountContainer(renderer, element, {
+    target: targetProps,
+    ...props
+  }, emit, parent) {
+    const container = createElement$1('div');
+    updateProps(renderer, container, (element === null || element === void 0 ? void 0 : element.props) || props, emit);
+    return { ...getTarget(renderer, container, targetProps),
+      container,
+      exposed: null
+    };
+  }
+
+  function unmountContainer(renderer, container, node) {
+    if (node === null) {
+      container.remove();
+    }
+  }
+
+  function updateContainer(renderer, container, element, {
+    target,
+    ...props
+  }, emit, parent) {
+    updateProps(renderer, container, (element === null || element === void 0 ? void 0 : element.props) || props, emit);
+    return getTarget(renderer, container, target);
+  }
+
+  function removeNode(renderer, node) {
+    const p = renderer.getParent(node);
+
+    if (!p) {
       return;
     }
 
-    list = [f];
-    window.requestAnimationFrame(() => {
-      const fs = list;
-      list = undefined;
-
-      if (!fs) {
-        return;
-      }
-
-      fs.forEach(f => f());
-    });
+    p.removeChild(node);
   }
 
-  const xmlnsMap = {
-    svg: 'http://www.w3.org/2000/svg',
-    html: 'http://www.w3.org/1999/xhtml',
-    mathml: 'http://www.w3.org/1998/Math/MathML'
-  };
-  const SVGTags = new Set(['altGlyph', 'altGlyphDef', 'altGlyphItem', 'animate', 'animateColor', 'animateMotion', 'animateTransform', 'circle', 'clipPath', 'color-profile', 'cursor', 'defs', 'desc', 'ellipse', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite', 'feConvolveMatrix', 'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight', 'feFlood', 'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR', 'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode', 'feMorphology', 'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile', 'feTurbulence', 'filter', 'font-face', 'font-face-format', 'font-face-name', 'font-face-src', 'font-face-uri', 'foreignObject', 'g', 'glyph', 'glyphRef', 'hkern', 'image', 'line', 'linearGradient', 'marker', 'mask', 'metadata', 'missing-glyph', 'mpath', 'path', 'pattern', 'polygon', 'polyline', 'radialGradient', 'rect', 'script', 'set', 'stop', 'style', 'svg', 'switch', 'symbol', 'text', 'textPath', 'title', 'tref', 'tspan', 'use', 'view', 'vkern']);
-  const MathMLTags = new Set(['maction', 'math', 'menclose', 'merror', 'mfenced', 'mfrac', 'mglyph', 'mi', 'mlabeledtr', 'mmultiscripts', 'mn', 'mo', 'mover', 'mpadded', 'mphantom', 'mroot', 'mrow', 'ms', 'mspace', 'msqrt', 'mstyle', 'msub', 'msubsup', 'msup', 'mtable', 'mtd', 'mtext', 'mtr', 'munder', 'munderover', 'semantics']);
-
-  function createElement$1(tagname, namespace) {
-    const res = /^([a-z][a-z0-9-]*):([a-z0-9-]+)$/i.exec(tagname);
-    const tag = res ? res[2] : tagname;
-    const ns = (namespace || (res === null || res === void 0 ? void 0 : res[1]) || SVGTags.has(tag.toLowerCase()) && 'svg' || MathMLTags.has(tag.toLowerCase()) && 'mathml' || '').toLowerCase();
-
-    if (!ns) {
-      return document.createElement(tag);
+  function getContainer(renderer, container, target, next) {
+    if (typeof target === 'string') {
+      target = document.querySelector(target);
     }
 
-    return document.createElementNS(ns in xmlnsMap && xmlnsMap[ns] || ns, tag);
-  }
-
-  const tagRegex = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)?(?::[a-z0-9]+(?:-[a-z0-9]+)?)?$/i;
-
-  function isTagName(tag) {
-    if (typeof tag !== 'string') {
-      return false;
+    if (target === null) {
+      return [null, null];
     }
 
-    return tagRegex.test(tag);
+    if (!(target instanceof Element)) {
+      target = document.body;
+    }
+
+    if (typeof next === 'string') {
+      next = document.querySelector(next);
+    }
+
+    if (!(next instanceof Element) || next.parentElement !== target) {
+      next = null;
+    }
+
+    return [target, next];
   }
 
-  const render$1 = {
-    type: 'web',
+  const renderer = {
+    type: 'html',
     nextFrame: nextFrame$1,
 
     isNode(v) {
       return v instanceof Node;
     },
 
-    mount({
-      target,
-      class: className,
-      style,
-      tag
-    }, parent) {
-      if (isValue(target)) {
-        target = target.value;
-      }
-
-      if (!isTagName(tag)) {
-        tag = 'div';
-      }
-
-      const container = render$1.createElement(tag);
-      render$1.updateProps(container, {
-        class: className,
-        style
-      });
-
-      if (target === null) {
-        if (!parent) {
-          return [container, container];
-        }
-
-        return [container, parent.createPlaceholder()];
-      }
-
-      if (typeof target === 'string') {
-        target = document.querySelector(target);
-      }
-
-      if (target instanceof Element) {
-        target.appendChild(container);
-
-        if (parent) {
-          return [container, parent.createPlaceholder()];
-        }
-
-        return [container, container];
-      }
-
-      if (parent !== render$1) {
-        document.body.appendChild(container);
-        return [container, container];
-      }
-
-      return [container, container];
+    getContainer(container, target, next) {
+      return getContainer(this, container, target, next);
     },
 
-    unmount(container, node, removed) {
-      if (container === node && removed) {
-        return;
-      }
-
-      container.remove();
+    mountContainer(data, props, emit, parent) {
+      return mountContainer(this, data, props, emit);
     },
 
-    drawContainer(container, node, {
-      target,
-      class: className,
-      style,
-      tag
-    }, parent) {
-      render$1.updateProps(container, {
-        class: className,
-        style
-      });
-
-      if (isValue(target)) {
-        console.log(target);
-        target = target.value;
-      }
-
-      const oldTarget = parent === render$1 && container === node ? undefined : render$1.getParent(node);
-
-      if (target === null) {
-        if (oldTarget === null) {
-          return [container, node];
-        }
-
-        if (container !== node) {
-          container.remove();
-        }
-
-        if (!parent) {
-          return [container, container];
-        }
-
-        return [container, parent.createPlaceholder()];
-      }
-
-      if (typeof target === 'string') {
-        target = document.querySelector(target);
-      }
-
-      if (parent !== render$1 && !(target instanceof Element)) {
-        target = document.body;
-      }
-
-      if (oldTarget === target) {
-        return [container, node];
-      }
-
-      if (parent !== render$1) {
-        target.appendChild(container);
-        return [container, node];
-      }
-
-      if (!oldTarget) {
-        const newNode = parent.createPlaceholder();
-        const pNode = parent.getParent(node);
-
-        if (pNode) {
-          render$1.insertNode(pNode, newNode, node);
-          render$1.removeNode(node);
-        }
-
-        target.appendChild(container);
-        return [container, newNode];
-      }
-
-      if (!target) {
-        const pNode = parent.getParent(node);
-
-        if (pNode) {
-          render$1.insertNode(pNode, container, node);
-          render$1.removeNode(node);
-        }
-
-        return [container, container];
-      }
-
-      target.appendChild(container);
-      return [container, node];
+    updateContainer(container, target, insert, next, data, props, emit, parent) {
+      return updateContainer(this, container, data, props, emit);
     },
 
-    drawNode() {},
+    recoveryContainer() {},
 
-    createElement(tag) {
-      return createElement$1(tag);
+    unmountContainer(container, data, props, parent) {
+      return unmountContainer(this, container, data);
+    },
+
+    getMountOptions() {},
+
+    createElement(data) {
+      if (!data || typeof data !== 'string') {
+        return null;
+      }
+
+      return createElement$1(data);
     },
 
     createText(text) {
-      return document.createTextNode(text);
+      return createText(text);
     },
 
     createPlaceholder() {
-      return document.createComment('');
+      return createPlaceholder$1();
     },
 
     createComponent() {
-      const node = createElement$1('neep-component');
-      return [node, node.attachShadow({
-        mode: 'open'
-      })];
+      return createComponent();
     },
 
     getParent(node) {
-      return node.parentNode;
+      return getParent(node);
     },
 
     nextNode(node) {
       return node.nextSibling;
     },
 
-    updateProps(node, props) {
-      update$3(node, props);
+    updateProps(node, data, props, emit) {
+      updateProps(this, node, props, emit);
     },
 
     insertNode(parent, node, next = null) {
-      parent.insertBefore(node, next);
+      return insertNode(parent, node, next);
     },
 
     removeNode(node) {
-      const p = render$1.getParent(node);
-
-      if (!p) {
-        return;
-      }
-
-      p.removeChild(node);
-    },
-
-    getRect(node) {
-      if (node instanceof Element) {
-        const {
-          top,
-          right,
-          bottom,
-          left,
-          width,
-          height
-        } = node.getBoundingClientRect();
-        return {
-          top,
-          right,
-          bottom,
-          left,
-          width,
-          height
-        };
-      }
-
-      if (node instanceof ShadowRoot) {
-        const {
-          top,
-          right,
-          bottom,
-          left,
-          width,
-          height
-        } = node.host.getBoundingClientRect();
-        return {
-          top,
-          right,
-          bottom,
-          left,
-          width,
-          height
-        };
-      }
-
-      return null;
+      return removeNode(this, node);
     }
 
   };
-  installNeep()({
-    render: render$1
-  });
+  let Container$1;
 
-  /*!
-   * NeepDevtools v0.1.0-alpha.8
-   * (c) 2019-2020 Fierflame
-   * @license MIT
-   */
-
-  function install$1() {
-    return install;
+  function initContainer() {
+    Container$1 = createContainerComponent(createElement(''), {
+      renderer,
+      name: '[HTML]'
+    });
   }
 
+  function init$1() {
+    initContainer();
+  }
+
+  installNeep(renderer);
+  init$1();
+
+  /*!
+   * NeepDevtools v0.1.0-alpha.9
+   * (c) 2019-2021 Fierflame
+   * @license MIT
+   */
   let Type;
 
   (function (Type) {
@@ -5103,177 +7329,323 @@
     Type["native"] = "native";
     Type["container"] = "container";
     Type["special"] = "special";
+    Type["deliver"] = "deliver";
   })(Type || (Type = {}));
 
-  function* getTree(tree, parent = 0) {
-    var _component$exposed;
-
-    if (Array.isArray(tree)) {
-      for (const it of tree) {
-        yield* getTree(it);
-      }
-
-      return;
-    }
-
-    const {
-      id: tagId,
-      tag,
-      props,
-      children,
-      key,
-      component,
-      label = component === null || component === void 0 ? void 0 : (_component$exposed = component.exposed) === null || _component$exposed === void 0 ? void 0 : _component$exposed.$label
-    } = tree;
-
-    if (!tag) {
-      return yield {
-        tagId,
-        parent,
-        type: Type.placeholder,
-        tag: 'placeholder',
-        children: []
-      };
-    }
-
-    if (typeof tag !== 'string') {
-      const name = tag[nameSymbol] || tag.name;
-
-      if (!component) {
-        return yield {
-          tagId,
-          parent,
-          type: Type.simple,
-          tag: name,
-          children: [...getTree(children)],
-          props,
-          key,
-          label
-        };
-      }
-
-      const isNative = tag[typeSymbol] === 'native';
-      return yield {
-        tagId,
-        parent,
-        type: isNative ? Type.native : Type.standard,
-        tag: name,
-        children: [...getTree(isNative ? component.nativeTree : component.tree)],
-        props,
-        key,
-        label
-      };
-    }
-
-    const ltag = tag.toLowerCase();
-
-    if (ltag === 'neep:container') {
-      return yield {
-        tagId,
-        parent,
-        type: Type.container,
-        tag: ltag,
-        children: [...getTree(component ? component.content : children)],
-        props,
-        key,
-        label
-      };
-    }
-
-    if (ltag === 'neep:value') {
-      const treeValue = tree.value;
-      return yield {
-        tagId,
-        parent,
-        type: Type.special,
-        tag: ltag,
-        children: [],
-        isNative: treeValue === tree.node,
-        value: treeValue,
-        props,
-        key,
-        label
-      };
-    }
-
-    if (ltag.substr(0, 5) === 'neep:' || ltag === 'template') {
-      return yield {
-        tagId,
-        parent,
-        type: Type.special,
-        tag: ltag,
-        children: [...getTree(children)],
-        props,
-        key,
-        label
-      };
-    }
-
-    yield {
-      tagId,
-      parent,
-      type: Type.tag,
-      tag,
-      children: [...getTree(children)],
-      props,
-      key,
-      label
-    };
+  function install$1() {
+    return install;
   }
 
-  function getValue$1(value) {
-    const type = typeof value;
+  const Deliver = Neep.createDeliverComponent({
+    keys: {},
+    selected: value(-1),
+    options: {}
+  });
 
-    if (type === 'function') {
-      return createElement("span", {
-        style: "font-weight: bold;"
-      }, "[Function]");
+  function NodeTag({
+    proxy,
+    key,
+    switchOpen,
+    opened,
+    setSelected,
+    selected
+  }) {
+    const childNodes = opened ? getChildTree(proxy) : [];
+    const hasChildNodes = Boolean(opened && childNodes.length);
+    return createElementBase('div', {
+      style: `
+			position: relative;
+			min-height: 20px;
+			font-size: 14px;
+			line-height: 20px;
+			padding-left: 20px;
+			background: ${selected ? '#CCC' : ''};
+		`
+    }, createElementBase('div', {
+      style: `
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 20px;
+			height: 20px;
+			text-align: center;
+			cursor: pointer;
+			background: #DDD;
+			`,
+      'on:click': switchOpen
+    }, opened ? '-' : '+'), createElementBase('div', {
+      'on:click': setSelected
+    }, '<', createElementBase(Slot), getKey(key), '>', !hasChildNodes && createTemplateElement(opened ? createElementBase('span') : createElementBase('span', null, '...'), '</', createElementBase(Slot), '>')), hasChildNodes && createTemplateElement(createElementBase('div', {
+      style: 'padding-left: 20px'
+    }, childNodes), createElementBase('div', {
+      'on-click': setSelected
+    }, '</', createElementBase(Slot), '>')));
+  }
+
+  function ValueTag({
+    proxy,
+    switchOpen,
+    opened,
+    setSelected,
+    selected
+  }) {
+    const {
+      text
+    } = proxy;
+    const childNodes = opened ? typeof text === 'string' ? [text] : getChildTree(proxy) : [];
+    const hasChildNodes = Boolean(opened && childNodes.length);
+    return createElementBase('div', {
+      style: `
+				position: relative;
+				min-height: 20px;
+				font-size: 14px;
+				line-height: 20px;
+				padding-left: 20px;
+				background: ${selected ? '#CCC' : ''};
+			`
+    }, createElementBase('div', {
+      style: 'position: absolute; left: 0; top: 0; width: 20px; height: 20px; text-align: center; cursor: pointer; background: #DDD;',
+      'on:click': switchOpen
+    }, opened ? '-' : '+'), createElementBase('div', {
+      'on:click': setSelected
+    }, createElementBase('span', {
+      style: 'font-style: italic;font-weight: bold;'
+    }, '[Value]'), !hasChildNodes && createTemplateElement(opened ? createElementBase('span') : createElementBase('span', null, '...'), createElementBase('span', {
+      style: 'font-style: italic;font-weight: bold;'
+    }, '[/Value]'))), hasChildNodes && createTemplateElement(createElementBase('div', {
+      style: 'padding-left: 20px'
+    }, childNodes), createElementBase('div', {
+      'on:click': setSelected,
+      style: 'font-style: italic; font-weight: bold;'
+    }, '[/Value]')));
+  }
+
+  function getType(proxy) {
+    if (isProxy(proxy, 'component')) {
+      return '';
     }
 
-    if (type === 'string') {
-      return createElement("span", null, value);
+    if (isProxy(proxy, 'container')) {
+      return 'container';
     }
 
-    if (type === 'bigint' || type === 'boolean' || type === 'number' || type === 'symbol' || type === 'undefined' || value === null) {
-      return createElement("span", {
-        style: "font-style: italic;"
-      }, String(value));
-    } else if (value instanceof RegExp) {
-      return createElement("span", {
-        style: "font-weight: bold;"
-      }, String(value));
-    } else if (value instanceof Date) {
-      return createElement("span", {
-        style: "font-weight: bold;"
-      }, value.toISOString());
-    } else if (type === 'object') {
-      return createElement("span", {
-        style: "font-style: italic;"
-      }, String(value));
+    if (isProxy(proxy, 'deliver')) {
+      return 'deliver';
+    }
+
+    if (isProxy(proxy, 'element')) {
+      return 'native';
+    }
+
+    if (isProxy(proxy, 'shell')) {
+      return 'shell';
+    }
+
+    if (isProxy(proxy, 'slot')) {
+      return 'scopeSlot';
+    }
+
+    if (isSimpleComponent(proxy.tag)) {
+      return 'simple';
+    }
+
+    if (isProxy(proxy, 'group')) {
+      return 'group';
     }
 
     return null;
   }
 
-  function TextNode({
-    isNative,
-    value
+  const render$1 = Neep.createRenderComponent(({
+    tagId,
+    keys,
+    selected,
+    setSelected,
+    switchOpen,
+    options
+  }) => {
+    const el = getNode(tagId);
+
+    if (!el) {
+      return null;
+    }
+
+    const selectedThis = selected.value === tagId;
+
+    if (!el.proxy && !el.tag) {
+      if (!options.placeholder) {
+        return null;
+      }
+
+      return createElementBase('span', {
+        'on:click': setSelected,
+        style: `font-weight: bold; background: ${selectedThis ? '#CCC' : ''};`
+      }, '[', el.tag === null ? 'Placeholder' : 'Native', ']');
+    }
+
+    const {
+      proxy,
+      tag
+    } = el;
+
+    if (tag === Render) {
+      if (!options.slotRender) {
+        return null;
+      }
+
+      return createElementBase('div', {
+        'on:click': setSelected,
+        key: tagId,
+        style: `
+					position: relative;
+					min-height: 20px;
+					font-size: 14px;
+					line-height: 20px;
+					background: ${selectedThis ? '#CCC' : ''};
+				`
+      }, '<', createElementBase('span', {
+        style: 'font-style: italic;'
+      }, 'Render'), getKey(el.key), '/>');
+    }
+
+    if (isProxy(proxy, 'value')) {
+      if (!proxy.isValue) {
+        const {
+          text
+        } = proxy;
+
+        if (typeof text !== 'string') {
+          return createTemplateElement(getChildTree(proxy));
+        }
+
+        if (!options.value) {
+          return null;
+        }
+
+        return createTemplateElement(text);
+      }
+
+      if (!options.value) {
+        if (typeof proxy.text === 'string') {
+          return null;
+        }
+
+        return createTemplateElement(getChildTree(proxy));
+      }
+
+      return createElementBase(ValueTag, {
+        opened: keys[tagId],
+        selected: selectedThis,
+        setSelected: setSelected,
+        proxy: proxy,
+        switchOpen: switchOpen
+      });
+    }
+
+    const type = getType(proxy);
+
+    if (type === null) {
+      return null;
+    }
+
+    if (type && !options[type]) {
+      return createTemplateElement(getChildTree(proxy));
+    }
+
+    let tagName = null;
+
+    switch (type) {
+      case '':
+        tagName = createElementBase('span', {
+          style: 'font-weight: bold;'
+        }, getTagName(tag));
+        break;
+
+      case 'container':
+        if (isContainerComponent(tag)) {
+          tagName = createElementBase('span', {
+            style: 'font-style: italic;font-weight: bold;'
+          }, getTagName(tag));
+        } else {
+          tagName = createElementBase('span', {
+            style: 'font-style: italic;'
+          }, 'Container');
+        }
+
+        break;
+
+      case 'deliver':
+        tagName = createElementBase('span', {
+          style: 'font-style: italic;'
+        }, 'Deliver');
+        break;
+
+      case 'scopeSlot':
+        tagName = createElementBase('span', {
+          style: 'font-style: italic;'
+        }, 'ScopeSlot');
+        break;
+
+      case 'group':
+        tagName = createElementBase('span', {
+          style: 'font-style: italic;'
+        }, 'Template');
+        break;
+
+      case 'native':
+        tagName = getTagName(tag);
+        break;
+
+      case 'shell':
+        tagName = createElementBase('span', {
+          style: 'text-decoration: underline;font-weight: bold;'
+        }, getTagName(tag));
+        break;
+
+      case 'simple':
+        tagName = createElementBase('span', {
+          style: 'text-decoration: line-through;font-weight: bold;'
+        }, getTagName(tag));
+        break;
+    }
+
+    return createElementBase(NodeTag, {
+      key: el.key,
+      opened: keys[tagId],
+      selected: selectedThis,
+      setSelected: setSelected,
+      proxy: proxy,
+      switchOpen: switchOpen
+    }, tagName);
+  });
+
+  function TreeNode({
+    tagId
+  }, {
+    delivered
   }) {
-    if (isNative) {
-      return createElement("span", {
-        style: "font-weight: bold;"
-      }, "[Native]");
+    const {
+      keys,
+      selected,
+      options
+    } = delivered(Deliver);
+
+    function setSelected() {
+      selected.value = selected.value === tagId ? -1 : tagId;
     }
 
-    if (!isValue(value)) {
-      return getValue$1(value);
+    function switchOpen() {
+      keys[tagId] = !keys[tagId];
     }
 
-    return createElement("template", null, createElement("span", {
-      style: "font-weight: bold;"
-    }, "[Value:\xA0"), getValue$1(value()), createElement("span", {
-      style: "font-weight: bold;"
-    }, "\xA0]"));
+    return render$1({
+      keys,
+      selected,
+      tagId,
+      setSelected,
+      switchOpen,
+      options
+    });
   }
 
   function getKey(key) {
@@ -5306,240 +7678,141 @@
     }
   }
 
-  function getLabels(labels) {
-    return labels.filter(Boolean).map(([v, color]) => createElement("span", {
-      style: `color: ${color || '#000'}`
-    }, v));
+  function getChildTree(proxy) {
+    const childNodes = proxy.content.flat(Infinity).map(t => createElementBase(TreeNode, {
+      'n:key': t.id,
+      tagId: t.id
+    }));
+    return childNodes;
   }
 
-  function Tag({
-    keys,
-    tagId,
-    key,
-    labels,
-    options,
-    children
-  }) {
-    const opened = keys[tagId];
-    const childNodes = opened ? [...getList(children, keys, options)] : [];
-    const hasChildNodes = Boolean(opened && childNodes.length);
-    return createElement("div", {
-      key: tagId,
-      style: " position: relative; min-height: 20px; font-size: 14px; line-height: 20px; "
-    }, createElement("div", {
-      style: " position: absolute; left: -20px; top: 0; width: 20px; height: 20px; text-align: center; cursor: pointer; background: #DDD; ",
-      onclick: () => keys[tagId] = !opened
-    }, opened ? '-' : '+'), createElement("div", null, '<', createElement(Slot, null), getKey(key), '>', !hasChildNodes && createElement("template", null, opened ? createElement("span", null) : createElement("span", {
-      onclick: () => keys[tagId] = true,
-      style: "cursor: pointer;"
-    }, "..."), '</', createElement(Slot, null), '>'), getLabels(labels)), hasChildNodes && createElement("template", null, createElement("div", {
-      style: "padding-left: 20px"
-    }, childNodes), createElement("div", null, '</', createElement(Slot, null), '>')));
-  }
-
-  function PlaceholderTag({
-    name = 'placeholder',
-    tagId,
-    key,
-    labels
-  }) {
-    return createElement("div", {
-      key: tagId,
-      style: " position: relative; min-height: 20px; font-size: 14px; line-height: 20px; "
-    }, '<', createElement("span", {
-      style: "font-style: italic;"
-    }, name), getKey(key), '/>', getLabels(labels));
-  }
-
-  function* getList(list, keys, options, labels = []) {
-    if (Array.isArray(list)) {
-      for (const it of list) {
-        yield* getList(it, keys, options, labels);
-      }
-
-      return;
+  function getTagName(tag) {
+    if (!tag) {
+      return '';
     }
 
-    const {
-      tagId,
-      type,
-      tag,
-      children,
-      props,
-      key,
-      label,
-      value,
-      isNative
-    } = list;
-    const labelList = [label, ...labels];
-
-    if (type === Type.standard || type === Type.native) {
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, createElement("span", {
-        style: "font-weight: bold;"
-      }, tag));
+    if (typeof tag === 'string') {
+      return tag;
     }
 
-    if (type === Type.tag) {
-      if (!options.tag) {
-        return yield* getList(children, keys, options, labelList);
-      }
-
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, tag);
+    if (isDeliverComponent(tag)) {
+      return 'Deliver';
     }
 
-    if (type === Type.simple) {
-      if (!options.simple) {
-        return yield* getList(children, keys, options, labelList);
-      }
-
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, createElement("span", {
-        style: " font-style: italic; font-weight: bold; "
-      }, tag));
-    }
-
-    if (type === Type.placeholder) {
-      if (!options.placeholder) {
-        return;
-      }
-
-      return yield createElement(PlaceholderTag, {
-        tagId: tagId,
-        key: key,
-        labels: labelList
-      });
-    }
-
-    if (type === Type.container) {
-      if (!options.container) {
-        return yield* getList(children, keys, options, labelList);
-      }
-
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, createElement("span", {
-        style: "font-style: italic;"
-      }, "container"));
-    }
-
-    if (isDeliver(tag)) {
-      if (!options.deliver) {
-        return yield* getList(children, keys, options, labelList);
-      }
-
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, createElement("span", {
-        style: "font-style: italic;"
-      }, "Deliver"));
-    }
-
-    if (tag === 'template') {
-      if (!options.template) {
-        return yield* getList(children, keys, options, labelList);
-      }
-
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, createElement("span", {
-        style: "font-style: italic;"
-      }, "Template"));
-    }
-
-    if (tag === 'neep:scopeslot' || tag === 'neep:scope-slot') {
-      if (!options.scopeSlot) {
-        return yield* getList(children, keys, options, labelList);
-      }
-
-      return yield createElement(Tag, {
-        keys: keys,
-        tagId: tagId,
-        key: key,
-        labels: labelList,
-        options: options,
-        children: children
-      }, createElement("span", {
-        style: "font-style: italic;"
-      }, "ScopeSlot"));
-    }
-
-    if (tag === 'neep:value') {
-      if (!options.tag) {
-        return;
-      }
-
-      if (!options.value) {
-        return;
-      }
-
-      return yield createElement(TextNode, {
-        isNative: isNative,
-        value: value
-      });
-    }
-
-    if (tag === 'neep:slotrender' || tag === 'neep:slot-render') {
-      if (options.slotRender) {
-        return yield createElement(PlaceholderTag, {
-          tagId: tagId,
-          key: key,
-          labels: labelList,
-          name: "SlotRender"
-        });
-      }
-
-      return;
-    }
+    return tag[nameSymbol] || tag.name;
   }
 
   var Tree = props => {
-    const keys = encase({});
-    return () => createElement("div", {
-      style: "padding-left: 20px;"
-    }, [...getList(props.tree, keys, props.options)]);
+    const value = {
+      keys: encase({}),
+      options: props.options,
+      selected: props.selected
+    };
+    return createRenderElement(() => createElementBase(Deliver, {
+      value: value
+    }, getChildTree(props.container)));
   };
 
-  function Devtools(props) {
-    return createElement("div", null, createElement(Slot, {
-      name: "settings"
-    }), createElement(Slot, {
-      name: "tree"
-    }));
+  function getKeyValue(key) {
+    if (typeof key === 'string') {
+      return JSON.stringify(key);
+    }
+
+    if (typeof key === 'number') {
+      return `${key}`;
+    }
+
+    if (typeof key === 'boolean') {
+      return `${key}`;
+    }
+
+    if (typeof key === 'bigint') {
+      return `${key}`;
+    }
+
+    if (typeof key === 'symbol') {
+      return `${String(key)}`;
+    }
+
+    if (key === null) {
+      return `${key}`;
+    }
+
+    if (key !== undefined) {
+      return `${String(key)}`;
+    }
+  }
+
+  function getValue$1(value) {
+    const type = typeof value;
+
+    if (type === 'function') {
+      return createElementBase('span', {
+        style: 'font-weight: bold;'
+      }, '[Function]');
+    }
+
+    if (type === 'string') {
+      return createElementBase('span', null, value);
+    }
+
+    if (type === 'bigint' || type === 'boolean' || type === 'number' || type === 'symbol' || type === 'undefined' || value === null) {
+      return createElementBase('span', {
+        style: 'font-style: italic;'
+      }, String(value));
+    } else if (value instanceof RegExp) {
+      return createElementBase('span', {
+        style: 'font-weight: bold;'
+      }, String(value));
+    } else if (value instanceof Date) {
+      return createElementBase('span', {
+        style: 'font-weight: bold;'
+      }, value.toISOString());
+    } else if (type === 'object') {
+      return createElementBase('span', {
+        style: 'font-style: italic;'
+      }, String(value));
+    }
+
+    return null;
+  }
+
+  function Prop({
+    props,
+    key
+  }) {
+    let p = props[key];
+    let propIsValue = false;
+
+    if (isValue(p)) {
+      propIsValue = true;
+      p = p();
+    }
+
+    return createElementBase('div', null, key, ': ', propIsValue && createElementBase('span', {
+      style: 'font-weight: bold;'
+    }, '[Value: '), getValue$1(p), propIsValue && createElementBase('span', {
+      style: 'font-weight: bold;'
+    }, ' ]'));
+  }
+
+  function Attr({
+    selected
+  }) {
+    const element = getNode(selected.value);
+
+    if (!element) {
+      return createElementBase('temlpate');
+    }
+
+    const {
+      props = {}
+    } = element;
+    return createElementBase('div', null, createElementBase('div', null, 'key:', getKeyValue(element.key)), createElementBase('div', null, '属性: '), Object.keys(props).map(k => createElementBase(Prop, {
+      'n:key': k,
+      'key': k,
+      props
+    })));
   }
 
   function Settings(props) {
@@ -5549,99 +7822,91 @@
     const placeholder = options('placeholder');
     const simple = options('simple');
     const container = options('container');
-    const template = options('template');
     const scopeSlot = options('scopeSlot');
     const slotRender = options('slotRender');
     const deliver = options('deliver');
-    return createElement("div", null, createElement("label", null, createElement("input", {
-      type: "checkbox",
+    const native = options('native');
+    const group = options('group');
+    const shell = options('shell');
+    return createElementBase('div', null, createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: value
-    }), "value"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'value'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: tag
-    }), "tag"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'tag'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: placeholder
-    }), "placeholder"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'placeholder'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: simple
-    }), "simple"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'simple'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: container
-    }), "container"), createElement("label", null, createElement("input", {
-      type: "checkbox",
-      checked: template
-    }), "template"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'container'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: scopeSlot
-    }), "scopeSlot"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'scopeSlot'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: slotRender
-    }), "slotRender"), createElement("label", null, createElement("input", {
-      type: "checkbox",
+    }), 'slotRender'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
       checked: deliver
-    }), "deliver"));
+    }), 'deliver'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
+      checked: native
+    }), 'native'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
+      checked: group
+    }), 'group'), createElementBase('label', null, createElementBase('input', {
+      type: 'checkbox',
+      checked: shell
+    }), 'shell'));
   }
+
+  function DefaultContainer(props) {
+    return createElementBase('template', null, createElementBase(Slot, {
+      name: 'settings'
+    }), createElementBase(Slot, {
+      name: 'tree'
+    }), createElementBase(Slot, {
+      name: 'attr'
+    }));
+  }
+
+  let currentContainer = DefaultContainer;
 
   let creating = false;
 
-  function create$2() {
-    creating = true;
-
-    try {
-      return {
-        options: encase({
-          value: false,
-          tag: false,
-          placeholder: false,
-          simple: false,
-          container: false,
-          template: false,
-          scopeSlot: false,
-          slotRender: false,
-          deliver: false
-        }),
-        exposed: render()
-      };
-    } finally {
-      creating = false;
-    }
-  }
-
-  function renderHook(container) {
+  function renderHook(rootEntity, container) {
     if (creating) {
       return;
     }
 
-    let app;
+    rootEntity.setHook('mounted', () => {
+      creating = true;
 
-    const getData = () => {
-      if (!app) {
-        app = create$2();
+      try {
+        const options = encase({});
+        const selected = value(-1);
+        render(createElementBase(currentContainer, {
+          options
+        }, createElementBase(Tree, {
+          'n:slot': 'tree',
+          container,
+          options,
+          selected
+        }), createElementBase(Settings, {
+          'n:slot': 'settings',
+          options
+        }), createElementBase(Attr, {
+          'n:slot': 'attr',
+          selected
+        }))).mount();
+      } finally {
+        creating = false;
       }
-
-      const tree = [...getTree(container.content)];
-      app.exposed.$update(createElement(Devtools, {
-        options: app.options
-      }, createElement(Tree, {
-        slot: "tree",
-        tree: tree,
-        options: app.options
-      }), createElement(Settings, {
-        slot: "settings",
-        options: app.options
-      })));
-    };
-
-    setHook('drawnAll', getData, container.entity);
-    setHook('mounted', () => {
-      if (!app) {
-        app = create$2();
-      }
-
-      getData();
-      app.exposed.$mount();
-    }, container.entity);
+    });
   }
 
   const devtools$1 = {
@@ -5666,98 +7931,115 @@
     return obj;
   }
 
+  function installNeep$1(Neep) {}
+
   let RouterDeliver;
   function initDelivers() {
-    RouterDeliver = createDeliver();
+    RouterDeliver = createDeliverComponent();
   }
 
-  function contextConstructor(context) {
-    const data = context.delivered(RouterDeliver);
+  function getDepth(router, def, depthProp) {
+    if (typeof depthProp === 'number' && Number.isInteger(depthProp)) {
+      if (depthProp < 0) {
+        return router.size + depthProp;
+      }
 
-    if (!data) {
-      return;
+      return depthProp;
     }
 
-    const {
-      router,
-      depth
-    } = data;
-    Reflect.defineProperty(context, 'route', {
-      value: router,
-      enumerable: true,
-      configurable: true
-    });
-    Reflect.defineProperty(context, 'match', {
-      get: () => router === null || router === void 0 ? void 0 : router._get(depth),
-      enumerable: true,
-      configurable: true
-    });
-  }
-  function installContextConstructor() {
-    addContextConstructor(contextConstructor);
+    return def;
   }
 
-  function RouterView(props, {
+  function get(props, {
     delivered
   }) {
-    const isNew = props.router instanceof Router;
-    const deliver = delivered(RouterDeliver);
-    const router = isNew ? props.router : deliver === null || deliver === void 0 ? void 0 : deliver.router;
+    if (props.router instanceof Router) {
+      const router = props.router;
 
-    if (!(router instanceof Router)) {
-      return;
-    }
-
-    let depth = props.depth;
-
-    if (typeof depth === 'number' && Number.isInteger(depth)) {
-      if (depth < 0) {
-        depth = router.size - depth;
+      if (!(router instanceof Router)) {
+        return null;
       }
-    } else {
-      depth = isNew ? 0 : ((deliver === null || deliver === void 0 ? void 0 : deliver.depth) || 0) + 1;
+
+      let depth = getDepth(router, 0, props.depth);
+
+      if (depth < 0) {
+        return null;
+      }
+
+      return {
+        router,
+        depth
+      };
     }
+
+    const routerDeliver = delivered(RouterDeliver);
+
+    if (!routerDeliver) {
+      return null;
+    }
+
+    const router = routerDeliver.router;
+    let depth = getDepth(router, routerDeliver.depth + 1, props.depth);
 
     if (depth < 0) {
       return null;
     }
 
-    const match = router._get(depth);
+    return {
+      router,
+      depth
+    };
+  }
 
-    if (!match) {
-      return;
+  var RouterView = createShellComponent(function RouterView(props, context) {
+    const info = get(props, context);
+
+    if (!info) {
+      return null;
     }
 
     const {
-      route: {
-        components
-      }
-    } = match;
-
-    if (!components) {
-      return null;
-    }
-
+      router
+    } = info;
+    let {
+      depth
+    } = info;
     const name = props.name || 'default';
-    const component = name in components ? components[name] : undefined;
 
-    if (!component) {
-      return null;
+    for (let match = router._get(depth); match; match = router._get(++depth)) {
+      const {
+        components
+      } = match.route;
+
+      if (!components) {
+        continue;
+      }
+
+      const component = name in components ? components[name] : undefined;
+
+      if (!component) {
+        continue;
+      }
+
+      label({
+        text: `{path=${match.path}}[${name}]`,
+        color: '#987654'
+      });
+      return createElementBase(RouterDeliver, {
+        value: {
+          depth,
+          router
+        }
+      }, createElementBase(component, props));
     }
 
-    label$1(`[path=${match.path}]`, '#987654');
-    return createElement(RouterDeliver, {
-      value: {
-        depth: depth,
-        router: router
-      }
-    }, createElement(component, props));
-  }
-  mSimple(RouterView);
-  mName('RouterView', RouterView);
+    return context.childNodes;
+  }, {
+    name: 'RouterView'
+  });
 
-  function RouterLink(props, context) {
-    var _route$history;
+  var RouterLink = createShellComponent(function RouterLink(props, context) {
+    var _route$router$history;
 
     const {
       route,
@@ -5765,7 +8047,7 @@
     } = context;
 
     if (!route) {
-      return createElement('template', {}, ...childNodes);
+      return createElementBase('template', {}, ...childNodes);
     }
 
     let {
@@ -5811,29 +8093,14 @@
       }
     }
 
-    return ((_route$history = route.history) === null || _route$history === void 0 ? void 0 : _route$history.link({ ...props,
+    return ((_route$router$history = route.router.history) === null || _route$router$history === void 0 ? void 0 : _route$router$history.link({ ...props,
       to
-    }, context, onclick)) || createElement('span', {
-      '@click': onclick
+    }, context, onclick)) || createElementBase('span', {
+      'on:click': onclick
     }, ...childNodes);
-  }
-  mSimple(RouterLink);
-  mName('RouterLink', RouterLink);
-
-  function installComponents() {
-    register('RouterView', RouterView);
-    register('router-view', RouterView);
-    register('RouterLink', RouterLink);
-    register('router-link', RouterLink);
-  }
-
-  var moduleList = [installComponents, installContextConstructor, initDelivers];
-
-  function install$2(Neep) {}
-
-  for (const f of moduleList) {
-    f();
-  }
+  }, {
+    name: 'RouterLink'
+  });
 
   function cleanPath(path) {
     path = `/${path}`.replace(/\/+(\/|$)/g, '$1');
@@ -6246,20 +8513,21 @@
 
 
   function regexpToRegexp(path, keys) {
-    if (!keys) return path; // Use a negative lookahead to match only capturing groups.
+    if (!keys) return path;
+    var groupsRegex = /\((?:\?<(.*?)>)?(?!\?)/g;
+    var index = 0;
+    var execResult = groupsRegex.exec(path.source);
 
-    var groups = path.source.match(/\((?!\?)/g);
-
-    if (groups) {
-      for (var i = 0; i < groups.length; i++) {
-        keys.push({
-          name: i,
-          prefix: "",
-          suffix: "",
-          modifier: "",
-          pattern: ""
-        });
-      }
+    while (execResult) {
+      keys.push({
+        // Use parenthesized substring match if available, index otherwise
+        name: execResult[1] || index++,
+        prefix: "",
+        suffix: "",
+        modifier: "",
+        pattern: ""
+      });
+      execResult = groupsRegex.exec(path.source);
     }
 
     return path;
@@ -6474,7 +8742,8 @@
     const list = [];
 
     for (const key of Object.keys(s)) {
-      const value = s[key];
+      const item = s[key];
+      const value = isValue(item) ? item() : item;
       const k = encodeURIComponent(key);
 
       if (!Array.isArray(value)) {
@@ -6583,21 +8852,13 @@
       return this.go(1);
     }
 
-    link({
-      id,
-      class: className,
-      style
-    }, {
+    link(props, {
       childNodes,
       emit
     }, onClick) {
-      return createElement('span', {
-        id,
-        class: className,
-        style,
-        'n-on': emit.omit('click'),
-        '@click': (...any) => {
-          if (!emit('click', ...any)) {
+      return createElementBase('span', { ...props,
+        'on:click': v => {
+          if (!emit('click', v)) {
             return;
           }
 
@@ -6690,26 +8951,15 @@
 
     link({
       to,
-      onclick,
-      id,
-      class: className,
-      style
+      ...props
     }, {
       childNodes,
       emit
     }, onClick) {
-      return createElement('a', {
-        id,
-        class: className,
-        style,
+      return createElementBase('a', { ...props,
         href: `${this.base}${this.router.getUrl(to)}`,
-        'n-on': emit.omit('click'),
-        '@click': e => {
+        'on:click': e => {
           let cancel = !emit('click', e);
-
-          if (typeof onclick === 'function') {
-            onclick(e);
-          }
 
           if (e.defaultPrevented) {
             return;
@@ -6797,26 +9047,15 @@
 
     link({
       to,
-      onclick,
-      id,
-      class: className,
-      style
+      ...props
     }, {
       childNodes,
       emit
     }, onClick) {
-      return createElement('a', {
-        id,
-        class: className,
-        style,
+      return createElementBase('a', { ...props,
         href: `#${this.router.getUrl(to)}`,
-        'n-on': emit.omit('click'),
-        '@click': e => {
+        'on:click': e => {
           let cancel = !emit('click', e);
-
-          if (typeof onclick === 'function') {
-            onclick(e);
-          }
 
           if (e.defaultPrevented) {
             return;
@@ -6844,7 +9083,7 @@
     WebHash: WebPathHistory$1
   });
 
-  function get(location, routes, basePath, stringifyQuery = stringify$1) {
+  function get$1(location, routes, basePath, stringifyQuery = stringify$1) {
     if (typeof location === 'string') {
       location = {
         path: location
@@ -6883,22 +9122,6 @@
     };
   }
 
-  function update$4(obj, props = {}) {
-    const newKeys = new Set(Reflect.ownKeys(props));
-
-    for (const k of Reflect.ownKeys(obj)) {
-      if (!newKeys.has(k)) {
-        delete obj[k];
-      }
-    }
-
-    for (const k of newKeys) {
-      obj[k] = props[k];
-    }
-
-    return obj;
-  }
-
   const redirects = [];
 
   class Router {
@@ -6907,7 +9130,7 @@
     }
 
     static get install() {
-      return install$2;
+      return installNeep$1;
     }
 
     static get View() {
@@ -6946,6 +9169,18 @@
       return this._state();
     }
 
+    get params() {
+      return this._params();
+    }
+
+    get query() {
+      return this._query();
+    }
+
+    get meta() {
+      return this._meta();
+    }
+
     constructor({
       History,
       historyOption
@@ -6972,11 +9207,11 @@
 
       _defineProperty$1(this, "_state", value(undefined));
 
-      _defineProperty$1(this, "params", encase(Object.create(null)));
+      _defineProperty$1(this, "_params", value({}));
 
-      _defineProperty$1(this, "query", encase(Object.create(null)));
+      _defineProperty$1(this, "_query", value({}));
 
-      _defineProperty$1(this, "meta", encase(Object.create(null)));
+      _defineProperty$1(this, "_meta", value({}));
 
       if (History) {
         var _history$start;
@@ -7011,7 +9246,7 @@
 
     _update(path, search, hash, state, force = false) {
       if (this._path() !== path || force) {
-        var _last$route, _last$route2;
+        var _last$route;
 
         const matches = [...matchRoutes(path, this._routes)];
         const last = matches[matches.length - 1];
@@ -7070,14 +9305,15 @@
 
         this._alias((last === null || last === void 0 ? void 0 : (_last$route = last.route) === null || _last$route === void 0 ? void 0 : _last$route.alias) || '');
 
-        update$4(this.params, (last === null || last === void 0 ? void 0 : last.params) || {});
-        update$4(this.meta, (last === null || last === void 0 ? void 0 : (_last$route2 = last.route) === null || _last$route2 === void 0 ? void 0 : _last$route2.meta) || {});
+        this._params((last === null || last === void 0 ? void 0 : last.params) || {});
+
+        this._meta(Object.assign({}, ...matches.map(m => m.route.meta)));
       }
 
       if (this._search() !== search) {
         this._search(search);
 
-        update$4(this.query, (this.parse || parse$1)(search.substr(1)));
+        this._query((this.parse || parse$1)(search.substr(1)));
       }
 
       this._hash(hash);
@@ -7092,7 +9328,7 @@
         path,
         search,
         hash
-      } = get(location, this._namedRoutes, this._path(), this.stringify);
+      } = get$1(location, this._namedRoutes, this._path(), this.stringify);
       (_this$history = this.history) === null || _this$history === void 0 ? void 0 : _this$history.push(path, search, hash, state);
 
       this._update(path, search, hash, state);
@@ -7105,7 +9341,7 @@
         path,
         search,
         hash
-      } = get(location, this._namedRoutes, this._path(), this.stringify);
+      } = get$1(location, this._namedRoutes, this._path(), this.stringify);
       (_this$history2 = this.history) === null || _this$history2 === void 0 ? void 0 : _this$history2.replace(path, search, hash, state);
 
       this._update(path, search, hash, state);
@@ -7116,7 +9352,7 @@
         path,
         search,
         hash
-      } = get(location, this._namedRoutes, this._path(), this.stringify);
+      } = get$1(location, this._namedRoutes, this._path(), this.stringify);
       return `${path}${search}${hash}`;
     }
 
@@ -7157,12 +9393,11 @@
     }
 
     get view() {
-      const view = (props, ...p) => RouterView({ ...props,
+      const view = createShellComponent((props, ...p) => RouterView({ ...props,
         router: this
-      }, ...p);
-
-      mName('Router', view);
-      mSimple(view);
+      }, ...p), {
+        name: 'Router'
+      });
       Reflect.defineProperty(this, 'view', {
         value: view,
         enumerable: true,
@@ -7173,78 +9408,200 @@
 
   }
 
-  const User = create$1((props, {
+  function createRouteContext(router, depth) {
+    return {
+      get size() {
+        return router.size;
+      },
+
+      get matches() {
+        return router.matches;
+      },
+
+      get match() {
+        return router._get(depth);
+      },
+
+      get alias() {
+        return router.alias;
+      },
+
+      get path() {
+        return router.path;
+      },
+
+      get search() {
+        return router.search;
+      },
+
+      get hash() {
+        return router.hash;
+      },
+
+      get state() {
+        return router.state;
+      },
+
+      get params() {
+        return router.params;
+      },
+
+      get query() {
+        return router.query;
+      },
+
+      get meta() {
+        return router.meta;
+      },
+
+      get router() {
+        return router;
+      },
+
+      push(location, state) {
+        return router.push(location, state);
+      },
+
+      replace(location, state) {
+        return router.replace(location, state);
+      },
+
+      getUrl(location) {
+        return router.getUrl(location);
+      },
+
+      go(index) {
+        return router.go(index);
+      },
+
+      back() {
+        return router.back();
+      },
+
+      forward() {
+        return router.forward();
+      }
+
+    };
+  }
+
+  function contextConstructor(context) {
+    const data = context.delivered(RouterDeliver);
+
+    if (!data) {
+      return;
+    }
+
+    const {
+      router,
+      depth
+    } = data;
+    Reflect.defineProperty(context, 'route', {
+      value: createRouteContext(router, depth),
+      enumerable: true,
+      configurable: true
+    });
+    Reflect.defineProperty(context, 'match', {
+      get: () => router === null || router === void 0 ? void 0 : router._get(depth),
+      enumerable: true,
+      configurable: true
+    });
+  }
+  function installContextConstructor() {
+    addContextConstructor(contextConstructor);
+  }
+
+  function installComponents() {
+    register('RouterView', RouterView);
+    register('router-view', RouterView);
+    register('RouterLink', RouterLink);
+    register('router-link', RouterLink);
+  }
+
+  var moduleList = [installComponents, installContextConstructor, initDelivers];
+
+  for (const f of moduleList) {
+    f();
+  }
+
+  const 组件 = Neep.createComponent(() => {
+    return Neep.createElement("div", null, "\u8FD9\u662F\u4E2D\u6587\u7EC4\u4EF6");
+  });
+  var User = Neep.createComponent((props, {
     route
   }) => {
-    var _route$params;
+    var _route$params, _route$params2, _route$params3, _route$params4, _route$params5;
 
-    const v = useValue(() => Math.random());
-    const s = useValue(() => value(0));
+    const v = Neep.useValue(() => Math.random());
+    const s = Neep.useValue(() => Neep.value(0));
     s.value++;
-    return createElement(Template, null, s.value, ": ", v, createElement("div", null, "\u7528\u6237\u9996\u9875"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']), createElement("hr", null), createElement("div", null, createElement(Router.Link, {
+    return Neep.createElement(Neep.Template, null, s.value, ": ", v, Neep.createElement(组件, null), Neep.createElement("div", null, "\u7528\u6237\u9996\u9875"), Neep.createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']), Neep.createElement("hr", null), Neep.createElement("div", null, Neep.createElement(Router.Link, {
       path: "/"
-    }, "\u9996\u9875")), createElement("div", null, createElement(Router.Link, {
+    }, "\u9996\u9875")), Neep.createElement("div", null, Neep.createElement(Router.Link, {
       path: "/users/1"
-    }, "\u7528\u62371")), createElement("div", null, createElement(Router.Link, {
+    }, "\u7528\u62371")), Neep.createElement("div", null, Neep.createElement(Router.Link, {
       path: "/users/2"
-    }, "\u7528\u62372")), createElement("div", null, createElement(Router.Link, {
-      path: "/users/1/info"
-    }, "\u7528\u62371\u4FE1\u606F")), createElement("div", null, createElement(Router.Link, {
-      path: "/users/1/settings"
-    }, "\u7528\u62371\u8BBE\u7F6E")), createElement("hr", null), createElement(Router.View, null));
+    }, "\u7528\u62372")), Neep.createElement("div", null, Neep.createElement(Router.Link, {
+      path: `/users/${route === null || route === void 0 ? void 0 : (_route$params2 = route.params) === null || _route$params2 === void 0 ? void 0 : _route$params2['id']}/info`
+    }, "\u7528\u6237", route === null || route === void 0 ? void 0 : (_route$params3 = route.params) === null || _route$params3 === void 0 ? void 0 : _route$params3['id'], "\u4FE1\u606F")), Neep.createElement("div", null, Neep.createElement(Router.Link, {
+      path: `/users/${route === null || route === void 0 ? void 0 : (_route$params4 = route.params) === null || _route$params4 === void 0 ? void 0 : _route$params4['id']}/settings`
+    }, "\u7528\u6237", route === null || route === void 0 ? void 0 : (_route$params5 = route.params) === null || _route$params5 === void 0 ? void 0 : _route$params5['id'], "\u8BBE\u7F6E")), Neep.createElement("hr", null), Neep.createElement(Router.View, null));
+  }, {
+    name: 'User'
   });
-  var User$1 = mark(User, mName('User'));
 
-  const Info = create$1((props, {
+  var Info = Neep.createComponent((props, {
     route
   }) => {
     var _route$params;
 
-    const v = useValue(() => Math.random());
-    return createElement(Template, null, v, createElement("div", null, "\u7528\u6237\u4FE1\u606F"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']));
+    const v = Neep.useValue(() => Math.random());
+    return Neep.createElement(Neep.Template, null, v, Neep.createElement("div", null, "\u7528\u6237\u4FE1\u606F"), Neep.createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']));
+  }, {
+    name: 'UserInfo'
   });
-  var Info$1 = mark(Info, mName('UserInfo'));
 
-  const Settings$1 = create$1((props, {
+  var Settings$1 = Neep.createComponent((props, {
     route
   }) => {
     var _route$params;
 
-    return createElement(Template, null, createElement("div", null, "\u7528\u6237\u8BBE\u7F6E"), createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']));
+    return Neep.createElement(Neep.Template, null, Neep.createElement("div", null, "\u7528\u6237\u8BBE\u7F6E"), Neep.createElement("div", null, "Id: ", route === null || route === void 0 ? void 0 : (_route$params = route.params) === null || _route$params === void 0 ? void 0 : _route$params['id']));
+  }, {
+    name: 'UserSettings'
   });
-  var Settings$2 = mark(Settings$1, mName('UserSettings'));
 
-  const Home = () => {
-    return createElement(Template, null, createElement("div", null, "\u9996\u9875"), createElement("hr", null), createElement("div", null, createElement(Router.Link, {
+  var Home = Neep.createComponent(() => {
+    return Neep.createElement(Neep.Template, null, Neep.createElement("div", null, "\u9996\u9875"), Neep.createElement("hr", null), Neep.createElement("div", null, Neep.createElement(Router.Link, {
       path: "/"
-    }, "\u9996\u9875")), createElement("div", null, createElement(Router.Link, {
+    }, "\u9996\u9875")), Neep.createElement("div", null, Neep.createElement(Router.Link, {
       path: "/users/1"
-    }, "\u7528\u62371")), createElement("div", null, createElement(Router.Link, {
+    }, "\u7528\u62371")), Neep.createElement("div", null, Neep.createElement(Router.Link, {
       path: "/users/1/settings"
-    }, "\u7528\u62371\u8BBE\u7F6E")), createElement("hr", null), createElement(Router.View, null));
-  };
-
-  var Home$1 = mark(Home, mName('Home'));
+    }, "\u7528\u62371\u8BBE\u7F6E")), Neep.createElement("hr", null), Neep.createElement(Router.View, null));
+  }, {
+    name: 'Home'
+  });
 
   const router = new Router({
-    History: Router.history.WebHash
+    History: Router.history.WebPath
   });
   router.setRoutes([{
     path: '/',
     redirect: '/home'
   }, {
     path: '/users/:id',
-    component: User$1,
+    component: User,
     children: [{
       path: 'info',
-      component: Info$1
+      component: Info
     }, {
       path: 'settings',
-      component: Settings$2
+      component: Settings$1
     }]
   }, {
     path: '/home',
-    component: Home$1
+    component: Home
   }, {
     path: '*',
     redirect: '/home'
@@ -7252,7 +9609,7 @@
   window.router = router;
   var App = router.view;
 
-  render(App).$mount();
+  Neep.render(App).mount();
 
 })));
 //# sourceMappingURL=index.js.map
