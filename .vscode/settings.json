@@ -1,0 +1,5 @@
+{
+	"liveServer.settings.root": "/test/bundle",
+	"liveServer.settings.file": "index.html",
+	"liveServer.settings.host": "127.1.0.2"
+}
