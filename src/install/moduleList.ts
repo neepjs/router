@@ -1,9 +1,9 @@
-import installContextConstructor from './installContextConstructor';
 import installComponents from './installComponents';
 import initDelivers from './initDelivers';
+import initWith from './initWith';
 
 export default [
 	installComponents,
-	installContextConstructor,
 	initDelivers,
+	initWith,
 ];

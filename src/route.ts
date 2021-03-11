@@ -1,6 +1,6 @@
 
 import { match, compile } from 'path-to-regexp';
-import { RouteConfig, Route, Match } from './type';
+import { RouteConfig, Route, Match } from './types';
 import { cleanPath } from './util';
 
 

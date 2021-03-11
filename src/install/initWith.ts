@@ -1,10 +1,13 @@
-import Neep from '@neep/core';
-import { addContextConstructor } from './neep';
+import {
+	createWith,
+	withDelivered,
+} from './neep';
 import { RouterDeliver } from './initDelivers';
 import Router from '../Router';
-import { Match, RouteContext } from '../type';
+import { Match, RouteContext } from '../types';
 
-function createRouteContext(router: Router, depth: number): RouteContext {
+
+export function createRouteContext(router: Router, depth: number): RouteContext {
 	return {
 		get size(): number { return router.size; },
 		get matches(): Match[] { return router.matches; },
@@ -39,22 +42,15 @@ function createRouteContext(router: Router, depth: number): RouteContext {
 	};
 }
 
-export function contextConstructor(context: Neep.Context<any, any, any>) {
-	const data = context.delivered(RouterDeliver);
-	if (!data) { return; }
-	const {router, depth} = data;
-	Reflect.defineProperty(context, 'route', {
-		value: createRouteContext(router, depth),
-		enumerable: true,
-		configurable: true,
+export let withRouter: (() => RouteContext | undefined);
+export default function init() {
+	withRouter = createWith({
+		name: 'withRouter',
+		create() {
+			const data = withDelivered(RouterDeliver);
+			if (!data) { return; }
+			const {router, depth} = data;
+			return createRouteContext(router, depth);
+		},
 	});
-	Reflect.defineProperty(context, 'match', {
-		get: () => router?._get(depth),
-		enumerable: true,
-		configurable: true,
-	});
-}
-
-export default function installContextConstructor() {
-	addContextConstructor(contextConstructor);
 }

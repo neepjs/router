@@ -1,10 +1,12 @@
-import { LinkProps } from './type';
+import { LinkProps } from './types';
 import { createElementBase, createShellComponent } from './install/neep';
+import { withRouter } from './install';
 
 
 export default createShellComponent<LinkProps, any>(function RouterLink(props, context) {
-	const { route, childNodes } = context;
-	if (!route) { return createElementBase('template', {}, ...childNodes); }
+	const { childNodes } = context;
+	const route = withRouter();
+	if (!route) { return createElementBase('template', {}, ...childNodes()); }
 	let {to, append, replace, path, search, hash, query, alias, params} = props;
 	if (!to) {
 		to = { path, search, hash, query, alias, params };
@@ -24,6 +26,6 @@ export default createShellComponent<LinkProps, any>(function RouterLink(props, c
 	}
 	return route.router
 		.history?.link({...props, to}, context, onclick)
-		|| createElementBase('span', {'on:click': onclick}, ...childNodes);
+		|| createElementBase('span', {'on:click': onclick}, ...childNodes());
 
 }, {name: 'RouterLink'});

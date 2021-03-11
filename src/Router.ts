@@ -3,7 +3,7 @@ import install from './install/neep';
 import { Error, value } from './install/neep';
 import RouterView from './View';
 import RouterLink from './Link';
-import { Route, Location, IHistory, Match, RouteConfig } from './type';
+import { Route, Location, IHistory, Match, RouteConfig } from './types';
 import { cleanPath } from './util';
 import { addRoute, matchRoutes } from './route';
 import { stringify, parse } from './query';

@@ -3,11 +3,12 @@ export {
 	isValue,
 	register,
 	Error,
-	label,
 	createElementBase,
 	createShellComponent,
 	createDeliverComponent,
-	addContextConstructor,
+	createWith,
+	withDelivered,
+	withLabel,
 } from '@neep/core';
 
 

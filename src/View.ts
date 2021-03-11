@@ -1,8 +1,7 @@
-import Neep from '@neep/core';
-import { createShellComponent, createElementBase, label } from './install/neep';
+import { createShellComponent, createElementBase, withLabel, withDelivered } from './install/neep';
 import Router from './Router';
 import { RouterDeliver } from './install/initDelivers';
-import { ViewProps } from './type';
+import { ViewProps } from './types';
 
 
 function getDepth(
@@ -10,25 +9,22 @@ function getDepth(
 	def: number,
 	depthProp: number | undefined,
 ) {
-	if (typeof depthProp === 'number' && Number.isInteger(depthProp)) {
-		if (depthProp < 0) {
-			return router.size + depthProp;
-		}
-		return depthProp;
-	}
-	return def;
+	if (typeof depthProp !== 'number') { return def; }
+	if (!Number.isInteger(depthProp)) { return def; }
+	if (depthProp < 0) { return router.size + depthProp; }
+	return depthProp;
 }
-function get(props: ViewProps, { delivered }: Neep.ShellContext<any>): RouterDeliver | null {
-	if (props.router instanceof Router) {
-		const router = props.router;
-		if (!(router instanceof Router)) { return null; }
-		let depth = getDepth(router, 0, props.depth);
+
+function get(props: ViewProps): RouterDeliver | null {
+	const propsRouter = props.router;
+	if (propsRouter instanceof Router) {
+		let depth = getDepth(propsRouter, 0, props.depth);
 		if (depth < 0) { return null; }
-		return { router, depth};
+		return { router: propsRouter, depth};
 	}
-	const routerDeliver = delivered(RouterDeliver);
+	const routerDeliver = withDelivered(RouterDeliver);
 	if (!routerDeliver) { return null; }
-	const router = routerDeliver.router;
+	const {router} = routerDeliver;
 	let depth = getDepth(router, routerDeliver.depth + 1, props.depth);
 	if (depth < 0) { return null; }
 	return { router, depth };
@@ -38,7 +34,7 @@ export default createShellComponent<ViewProps, any>(function RouterView(
 	props,
 	context,
 ) {
-	const info = get(props, context);
+	const info = get(props);
 	if (!info) { return null; }
 	const {router} = info;
 	let {depth} = info;
@@ -47,14 +43,15 @@ export default createShellComponent<ViewProps, any>(function RouterView(
 	for(let match = router._get(depth); match; match = router._get(++depth)) {
 		const { components } = match.route;
 		if (!components) { continue; }
-		const component = name in components ? components[name] : undefined;
+		if (!(name in components)) { continue; }
+		const component = components[name];
 		if (!component) { continue; }
-		label({text: `{path=${match.path}}[${name}]`, color: '#987654'});
+		withLabel({text: `{path=${match.path}}[${name}]`, color: '#987654'});
 		return createElementBase(
 			RouterDeliver,
 			{ value: { depth, router }},
 			createElementBase(component, props),
 		);
 	}
-	return context.childNodes as any;
+	return context.childNodes() as any;
 }, { name: 'RouterView'});

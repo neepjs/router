@@ -1,5 +1,5 @@
 import Neep from '@neep/core';
-import { IHistory, IHistoryLinkProps } from '../type';
+import { IHistory, IHistoryLinkProps } from '../types';
 import Router from '../Router';
 import { createElementBase } from '../install/neep';
 
@@ -53,6 +53,6 @@ export default class StoreHistory implements IHistory {
 				if (!emit('click', v)) { return; }
 				onClick();
 			},
-		}, ...childNodes);
+		}, ...childNodes());
 	}
 }

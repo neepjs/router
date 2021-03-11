@@ -1,5 +1,5 @@
 import Neep from '@neep/core';
-import { IHistory, IHistoryLinkProps } from '../type';
+import { IHistory, IHistoryLinkProps } from '../types';
 import Router from '../Router';
 import { createElementBase } from '../install/neep';
 
@@ -62,6 +62,6 @@ export default class WebPathHistory implements IHistory {
 				if (cancel) { return; }
 				onClick();
 			},
-		}, ...childNodes);
+		}, ...childNodes());
 	}
 }

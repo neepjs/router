@@ -90,3 +90,14 @@ export interface Match {
 	params: object;
 	route: Route;
 }
+
+declare global {
+	namespace JSX {
+		interface IntrinsicElements {
+			RouterView: ViewProps,
+			'router-view': ViewProps,
+			RouterLink: LinkProps,
+			'router-link': LinkProps,
+		}
+	}
+}
