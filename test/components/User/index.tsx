@@ -1,13 +1,13 @@
 import Neep from '@neep/core';
-import Router from '@neep/router';
+import Router, { withRouter } from '@neep/router';
 
 const 组件 = Neep.createComponent(() => {
 	return <div>这是中文组件</div>;
 });
 export default Neep.createComponent((
 	props: { a?: any,  set?: () => void},
-	{ route },
 ) => {
+	const route = withRouter();
 	const v = Neep.useValue(() => Math.random());
 	const s = Neep.useValue(() => Neep.value(0));
 	s.value++;

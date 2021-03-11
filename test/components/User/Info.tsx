@@ -1,9 +1,10 @@
 import Neep from '@neep/core';
+import { withRouter } from '@neep/router';
 
 export default  Neep.createComponent((
 	props: { a?: any,  set?: () => void},
-	{ route },
 ) => {
+	const route = withRouter();
 	const v = Neep.useValue(() => Math.random());
 	return <Neep.Template>
 		{v}
