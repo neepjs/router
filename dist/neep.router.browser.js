@@ -1,5 +1,5 @@
 /*!
- * NeepRouter v0.1.0-alpha.5
+ * NeepRouter v0.1.0-alpha.6
  * (c) 2020-2021 Fierflame
  * @license MIT
  */
@@ -32,46 +32,46 @@
 	}
 
 	function getDepth(router, def, depthProp) {
-	  if (typeof depthProp === 'number' && Number.isInteger(depthProp)) {
-	    if (depthProp < 0) {
-	      return router.size + depthProp;
-	    }
-
-	    return depthProp;
+	  if (typeof depthProp !== 'number') {
+	    return def;
 	  }
 
-	  return def;
+	  if (!Number.isInteger(depthProp)) {
+	    return def;
+	  }
+
+	  if (depthProp < 0) {
+	    return router.size + depthProp;
+	  }
+
+	  return depthProp;
 	}
 
-	function get(props, {
-	  delivered
-	}) {
-	  if (props.router instanceof Router) {
-	    const router = props.router;
+	function get(props) {
+	  const propsRouter = props.router;
 
-	    if (!(router instanceof Router)) {
-	      return null;
-	    }
-
-	    let depth = getDepth(router, 0, props.depth);
+	  if (propsRouter instanceof Router) {
+	    let depth = getDepth(propsRouter, 0, props.depth);
 
 	    if (depth < 0) {
 	      return null;
 	    }
 
 	    return {
-	      router,
+	      router: propsRouter,
 	      depth
 	    };
 	  }
 
-	  const routerDeliver = delivered(RouterDeliver);
+	  const routerDeliver = core.withDelivered(RouterDeliver);
 
 	  if (!routerDeliver) {
 	    return null;
 	  }
 
-	  const router = routerDeliver.router;
+	  const {
+	    router
+	  } = routerDeliver;
 	  let depth = getDepth(router, routerDeliver.depth + 1, props.depth);
 
 	  if (depth < 0) {
@@ -85,7 +85,7 @@
 	}
 
 	var RouterView = core.createShellComponent(function RouterView(props, context) {
-	  const info = get(props, context);
+	  const info = get(props);
 
 	  if (!info) {
 	    return null;
@@ -108,13 +108,17 @@
 	      continue;
 	    }
 
-	    const component = name in components ? components[name] : undefined;
+	    if (!(name in components)) {
+	      continue;
+	    }
+
+	    const component = components[name];
 
 	    if (!component) {
 	      continue;
 	    }
 
-	    core.label({
+	    core.withLabel({
 	      text: `{path=${match.path}}[${name}]`,
 	      color: '#987654'
 	    });
@@ -126,21 +130,133 @@
 	    }, core.createElementBase(component, props));
 	  }
 
-	  return context.childNodes;
+	  return context.childNodes();
 	}, {
 	  name: 'RouterView'
 	});
+
+	function installComponents() {
+	  core.register('RouterView', RouterView);
+	  core.register('router-view', RouterView);
+	  core.register('RouterLink', RouterLink);
+	  core.register('router-link', RouterLink);
+	}
+
+	function createRouteContext(router, depth) {
+	  return {
+	    get size() {
+	      return router.size;
+	    },
+
+	    get matches() {
+	      return router.matches;
+	    },
+
+	    get match() {
+	      return router._get(depth);
+	    },
+
+	    get alias() {
+	      return router.alias;
+	    },
+
+	    get path() {
+	      return router.path;
+	    },
+
+	    get search() {
+	      return router.search;
+	    },
+
+	    get hash() {
+	      return router.hash;
+	    },
+
+	    get state() {
+	      return router.state;
+	    },
+
+	    get params() {
+	      return router.params;
+	    },
+
+	    get query() {
+	      return router.query;
+	    },
+
+	    get meta() {
+	      return router.meta;
+	    },
+
+	    get router() {
+	      return router;
+	    },
+
+	    push(location, state) {
+	      return router.push(location, state);
+	    },
+
+	    replace(location, state) {
+	      return router.replace(location, state);
+	    },
+
+	    getUrl(location) {
+	      return router.getUrl(location);
+	    },
+
+	    go(index) {
+	      return router.go(index);
+	    },
+
+	    back() {
+	      return router.back();
+	    },
+
+	    forward() {
+	      return router.forward();
+	    }
+
+	  };
+	}
+	function init() {
+	  exports.withRouter = core.createWith({
+	    name: 'withRouter',
+
+	    create() {
+	      const data = core.withDelivered(RouterDeliver);
+
+	      if (!data) {
+	        return;
+	      }
+
+	      const {
+	        router,
+	        depth
+	      } = data;
+	      return createRouteContext(router, depth);
+	    }
+
+	  });
+	}
+
+	var moduleList = [installComponents, initDelivers, init];
+
+	function install(Neep) {}
+
+	for (const f of moduleList) {
+	  f();
+	}
 
 	var RouterLink = core.createShellComponent(function RouterLink(props, context) {
 	  var _route$router$history;
 
 	  const {
-	    route,
 	    childNodes
 	  } = context;
+	  const route = exports.withRouter();
 
 	  if (!route) {
-	    return core.createElementBase('template', {}, ...childNodes);
+	    return core.createElementBase('template', {}, ...childNodes());
 	  }
 
 	  let {
@@ -190,7 +306,7 @@
 	    to
 	  }, context, onclick)) || core.createElementBase('span', {
 	    'on:click': onclick
-	  }, ...childNodes);
+	  }, ...childNodes());
 	}, {
 	  name: 'RouterLink'
 	});
@@ -957,7 +1073,7 @@
 
 	        onClick();
 	      }
-	    }, ...childNodes);
+	    }, ...childNodes());
 	  }
 
 	}
@@ -1066,7 +1182,7 @@
 
 	        onClick();
 	      }
-	    }, ...childNodes);
+	    }, ...childNodes());
 	  }
 
 	}
@@ -1162,7 +1278,7 @@
 
 	        onClick();
 	      }
-	    }, ...childNodes);
+	    }, ...childNodes());
 	  }
 
 	}
@@ -1499,124 +1615,6 @@
 	    return view;
 	  }
 
-	}
-
-	function createRouteContext(router, depth) {
-	  return {
-	    get size() {
-	      return router.size;
-	    },
-
-	    get matches() {
-	      return router.matches;
-	    },
-
-	    get match() {
-	      return router._get(depth);
-	    },
-
-	    get alias() {
-	      return router.alias;
-	    },
-
-	    get path() {
-	      return router.path;
-	    },
-
-	    get search() {
-	      return router.search;
-	    },
-
-	    get hash() {
-	      return router.hash;
-	    },
-
-	    get state() {
-	      return router.state;
-	    },
-
-	    get params() {
-	      return router.params;
-	    },
-
-	    get query() {
-	      return router.query;
-	    },
-
-	    get meta() {
-	      return router.meta;
-	    },
-
-	    get router() {
-	      return router;
-	    },
-
-	    push(location, state) {
-	      return router.push(location, state);
-	    },
-
-	    replace(location, state) {
-	      return router.replace(location, state);
-	    },
-
-	    getUrl(location) {
-	      return router.getUrl(location);
-	    },
-
-	    go(index) {
-	      return router.go(index);
-	    },
-
-	    back() {
-	      return router.back();
-	    },
-
-	    forward() {
-	      return router.forward();
-	    }
-
-	  };
-	}
-
-	function contextConstructor(context) {
-	  const data = context.delivered(RouterDeliver);
-
-	  if (!data) {
-	    return;
-	  }
-
-	  const {
-	    router,
-	    depth
-	  } = data;
-	  Reflect.defineProperty(context, 'route', {
-	    value: createRouteContext(router, depth),
-	    enumerable: true,
-	    configurable: true
-	  });
-	  Reflect.defineProperty(context, 'match', {
-	    get: () => router === null || router === void 0 ? void 0 : router._get(depth),
-	    enumerable: true,
-	    configurable: true
-	  });
-	}
-	function installContextConstructor() {
-	  core.addContextConstructor(contextConstructor);
-	}
-
-	function installComponents() {
-	  core.register('RouterView', RouterView);
-	  core.register('router-view', RouterView);
-	  core.register('RouterLink', RouterLink);
-	  core.register('router-link', RouterLink);
-	}
-
-	var moduleList = [installComponents, installContextConstructor, initDelivers];
-
-	function install(Neep) {}
-
-	for (const f of moduleList) {
-	  f();
 	}
 
 	exports.RouterLink = RouterLink;
